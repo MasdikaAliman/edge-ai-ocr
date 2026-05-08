@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+requests
+pydantic
+pydantic-settings
+langchain
+langchain-openai
+langchain-community
+langgraph
+pdfplumber
+Pillow
+python-multipart
+python-dotenv
