@@ -6,11 +6,11 @@ from typing import Any, Dict, List
 from fastapi import HTTPException
 from PIL import Image
 import pdfplumber
-from app.core.config import logger, BASE_URL_LLM, ALLOWED_MIME_TYPES, MAX_IMAGES
+from app.core.config import logger, BASE_URL_LLM, ALLOWED_MIME_TYPES, MAX_IMAGES, MAX_IMAGE_SIZE
 
 
-def _preprocess_image(b64_data: str, max_size: int = 1024) -> str:
-    """Decode → resize if needed → re-encode as JPEG base64."""
+def _preprocess_image(b64_data: str, max_size: int = MAX_IMAGE_SIZE) -> str:
+    """Decode b64 → resize if needed → re-encode as JPEG base64. Only for b64 user input."""
     raw_bytes = base64.b64decode(b64_data)
     with io.BytesIO(raw_bytes) as src:
         img = Image.open(src)
@@ -28,15 +28,17 @@ def _preprocess_image(b64_data: str, max_size: int = 1024) -> str:
     return result
 
 
-def _pil_to_content_item(pil_img: "Image.Image", mime: str = "image/png") -> Dict[str, Any]:
+def _pil_to_content_item(pil_img: "Image.Image") -> Dict[str, Any]:
     """Convert a PIL Image into an OpenAI-compatible image_url content dict."""
+    img = pil_img.convert("RGB")
+    if max(img.size) > MAX_IMAGE_SIZE:
+        img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.LANCZOS)
     with io.BytesIO() as buf:
-        pil_img.save(buf, format="PNG")
+        img.save(buf, format="JPEG", quality=95)
         b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    cleaned = _preprocess_image(b64)
     return {
         "type": "image_url",
-        "image_url": {"url": f"data:{mime};base64,{cleaned}"},
+        "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
     }
 
 
@@ -46,19 +48,12 @@ def _pdf_to_images(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[Dict[s
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for i, page in enumerate(pdf.pages):
+                if i >= max_pages:
+                    break
                 im = page.to_image(resolution=500).original
-
-                with io.BytesIO() as out:
-                    if im.mode in ("RGBA", "P"):
-                        im = im.convert("RGB")
-                    im.save(out, format="PNG", quality=95)
-                    b64 = base64.b64encode(out.getvalue()).decode("utf-8")
-
-                cleaned = _preprocess_image(b64)
-                items.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{cleaned}"},
-                })
+                if im.mode in ("RGBA", "P"):
+                    im = im.convert("RGB")
+                items.append(_pil_to_content_item(im))
     except Exception as e:
         logger.error("Error processing PDF to images: %s", e)
         raise ValueError(f"Failed to process PDF: {str(e)}")

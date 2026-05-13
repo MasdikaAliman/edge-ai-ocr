@@ -11,6 +11,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 MAX_IMAGES = int(os.getenv("MAX_IMAGES", "5"))
+MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "1024"))
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/tiff", "application/pdf"}
 
 BASE_URL_LLM = os.getenv("BASE_URL_LLM", "http://localhost:1234")
