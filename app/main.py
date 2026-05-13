@@ -1,3 +1,4 @@
+import asyncio
 import requests
 from typing import Annotated, Any, Dict, List, Optional
 from pydantic import WithJsonSchema
@@ -163,7 +164,7 @@ async def process_ocr_upload(
             if use_docling and _DOCLING_AVAILABLE:
                 logger.info("Routing PDF through Docling page-by-page pipeline.")
                 try:
-                    docling_pages = _extract_pages_with_docling(pdf_bytes_store)
+                    docling_pages = await asyncio.to_thread(_extract_pages_with_docling, pdf_bytes_store)
                 except Exception as e:
                     logger.warning("Docling failed (%s), falling back to image OCR.", e)
                     docling_pages = None
@@ -184,7 +185,7 @@ async def process_ocr_upload(
 
             # Fallback: render PDF pages to images via pdfplumber
             logger.info("Falling back to pdfplumber image-based OCR.")
-            pdf_image_items = _pdf_to_images(pdf_bytes_store)
+            pdf_image_items = await asyncio.to_thread(_pdf_to_images, pdf_bytes_store)
             for i, img_item in enumerate(pdf_image_items):
                 image_pages.append(PageData(
                     page_no=len(image_pages) + 1,
@@ -236,7 +237,7 @@ async def process_ocr_upload(
 # ── Health & root ──────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["Utility"])
-async def health_check():
+def health_check():
     """Check connectivity to the vLLM backend."""
     base_info = {
         "vllm_max_model_len": 11000,

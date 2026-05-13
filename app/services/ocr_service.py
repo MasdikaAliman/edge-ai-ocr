@@ -79,7 +79,7 @@ async def _run_ocr(
         HumanMessage(content=clean_content),
     ]
     try:
-        response = model.invoke(messages, timeout=120)
+        response = await model.ainvoke(messages, timeout=120)
         extracted_data = json.loads(_clean_json_response(response.content))
         return {"success": True, "data": extracted_data}
 
@@ -274,12 +274,7 @@ RULES:
 
 
 
-async def _run_langgraph_ocr(
-    document_type: str,
-    pages: List[PageData],
-    fields: Optional[List[str]] = None,
-    custom_prompt: str = "",
-) -> dict:
+def _build_graph():
     workflow = StateGraph(OCRState)
 
     workflow.add_node("process_page",      process_page_node)
@@ -302,8 +297,18 @@ async def _run_langgraph_ocr(
     )
     workflow.add_edge("aggregate_results", END)
 
-    app_graph = workflow.compile()
+    return workflow.compile()
 
+
+_ocr_graph = _build_graph()
+
+
+async def _run_langgraph_ocr(
+    document_type: str,
+    pages: List[PageData],
+    fields: Optional[List[str]] = None,
+    custom_prompt: str = "",
+) -> dict:
     initial_state: OCRState = {
         "document_type":  document_type,
         "fields":         fields,
@@ -315,7 +320,7 @@ async def _run_langgraph_ocr(
     }
 
     try:
-        final_state = await app_graph.ainvoke(initial_state)
+        final_state = await _ocr_graph.ainvoke(initial_state)
         return {"success": True, "data": final_state.get("final_result", {})}
     except Exception as e:
         logger.error("LangGraph processing error: %s", e)
