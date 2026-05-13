@@ -63,40 +63,38 @@ def _extract_pages_with_docling(pdf_bytes: bytes) -> List[PageData]:
 
         result = converter.convert(tmp_path)
         doc = result.document
+
+        # Pre-group tables and text items by page — O(n) once instead of O(pages×n)
+        tables_by_page: Dict[int, list] = {}
+        for table in doc.tables:
+            for p in (table.prov or []):
+                tables_by_page.setdefault(p.page_no, []).append(table)
+
+        text_by_page: Dict[int, List[str]] = {}
+        for item, _level in doc.iterate_items():
+            if hasattr(item, "text") and hasattr(item, "prov") and item.prov:
+                for p in item.prov:
+                    text_by_page.setdefault(p.page_no, []).append(item.text)
+
         pages: List[PageData] = []
 
         for page_no, page in doc.pages.items():
-            # 1. Full page image
             if page.image is None:
                 logger.warning("Page %d has no image, skipping.", page_no)
                 continue
 
             page_image_item = _pil_to_content_item(page.image.pil_image)
 
-            # 2. Table images for this page
             table_image_items: List[Dict[str, Any]] = []
-            for table in doc.tables:
-                is_on_page = False
-                if hasattr(table, "prov") and table.prov:
-                    for p in table.prov:
-                        if p.page_no == page_no:
-                            is_on_page = True
-                            break
-                if is_on_page:
-                    try:
-                        table_img = table.get_image(doc)
-                        if table_img:
-                            table_image_items.append(_pil_to_content_item(table_img))
-                    except Exception as e:
-                        logger.warning("Could not extract table image on page %d: %s", page_no, e)
+            for table in tables_by_page.get(page_no, []):
+                try:
+                    table_img = table.get_image(doc)
+                    if table_img:
+                        table_image_items.append(_pil_to_content_item(table_img))
+                except Exception as e:
+                    logger.warning("Could not extract table image on page %d: %s", page_no, e)
 
-            # 3. Page-specific text
-            page_text = ""
-            for item, _level in doc.iterate_items():
-                if hasattr(item, "prov") and item.prov:
-                    if any(p.page_no == page_no for p in item.prov):
-                        if hasattr(item, "text"):
-                            page_text += item.text + "\n"
+            page_text = "\n".join(text_by_page.get(page_no, []))
 
             pages.append(PageData(
                 page_no=page_no,
