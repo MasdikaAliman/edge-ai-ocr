@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.prompts import DOCUMENT_PROMPTS
-from app.core.config import logger, MAX_IMAGES, BASE_URL_LLM, DocumentType
+from app.core.config import logger, MAX_IMAGES, MAX_IMAGE_SIZE, BASE_URL_LLM, DocumentType
 from app.utils.helpers import _file_to_content_item, _pdf_to_images
 from app.services.docling_handler import _DOCLING_AVAILABLE, _extract_pages_with_docling, PageData
 from app.services.ocr_service import _run_ocr, _run_langgraph_ocr
@@ -241,7 +241,7 @@ def health_check():
     """Check connectivity to the vLLM backend."""
     base_info = {
         "vllm_max_model_len": 11000,
-        "max_image_size": "1024×1024",
+        "max_image_size": f"{MAX_IMAGE_SIZE}×{MAX_IMAGE_SIZE}",
         "max_images_per_request": MAX_IMAGES,
         "docling_available": _DOCLING_AVAILABLE,
     }
