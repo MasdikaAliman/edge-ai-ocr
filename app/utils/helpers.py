@@ -51,8 +51,6 @@ def _pdf_to_images(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[Dict[s
                 if i >= max_pages:
                     break
                 im = page.to_image(resolution=500).original
-                if im.mode in ("RGBA", "P"):
-                    im = im.convert("RGB")
                 items.append(_pil_to_content_item(im))
     except Exception as e:
         logger.error("Error processing PDF to images: %s", e)
@@ -80,7 +78,7 @@ def _file_to_content_item(raw_bytes: bytes, content_type: str) -> Dict[str, Any]
     cleaned = _preprocess_image(b64)
     return {
         "type": "image_url",
-        "image_url": {"url": f"data:{mime};base64,{cleaned}"},
+        "image_url": {"url": f"data:image/jpeg;base64,{cleaned}"},
     }
 
 
