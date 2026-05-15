@@ -67,7 +67,7 @@ def _extract_pages_with_docling(pdf_bytes: bytes) -> List[PageData]:
         # Pre-group tables and text items by page — O(n) once instead of O(pages×n)
         tables_by_page: Dict[int, list] = {}
         for table in doc.tables:
-            for p in (table.prov or []):
+            for p in (getattr(table, "prov", None) or []):
                 tables_by_page.setdefault(p.page_no, []).append(table)
 
         text_by_page: Dict[int, List[str]] = {}
