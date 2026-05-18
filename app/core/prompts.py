@@ -12,12 +12,20 @@ OUTPUT FORMAT:
 - Do NOT add any text before or after the JSON.
 """
 
+CUSTOM_BASE_PROMPT = f"""
+You are a document OCR extraction engine. Your only job is to read a document image and output its fields as a flat JSON object.
+
+{BASE_DIRECTIVES}
+"""
+
+
 GENERAL_PROMPT = f"""
 You are a document OCR extraction engine. Your only job is to read a document image and output its fields as a flat JSON object.
 
 {BASE_DIRECTIVES}
 
 STRUCTURE RULES:
+- Extract every label/key and its corresponding value as a key-value pair.
 - Flat key-value pairs for simple documents
 - Arrays of objects for tables or repeating rows
 - Mirror the document's logical hierarchy — no extra nesting
@@ -26,7 +34,7 @@ OUTPUT: A single JSON object whose keys reflect the actual fields found in THIS 
 Example for a simple form: {{"full_name": "Budi Santoso", "id_number": "3271234567890001", "address": "Jl. Merdeka No. 1"}}
 Example for a table: {{"items": [{{"description": "Laptop", "qty": 2, "price": "15000000"}}]}}
 
-Now extract all fields from the provided document image.
+Now extract all fields and key-value pairs from the provided document image.
 """
 KTP_PROMPT = f"""
 **Role:** You are an expert OCR engine specialized in Indonesian Kartu Tanda Penduduk (KTP / National ID Card).
@@ -287,7 +295,10 @@ def get_prompt(doc_type: str, fields: list = None) -> str:
     Returns:
         The full system prompt string to send as the SystemMessage.
     """
-    base = DOCUMENT_PROMPTS.get(doc_type, DOCUMENT_PROMPTS["General"])
+    if doc_type == "Custom":
+        base = CUSTOM_BASE_PROMPT
+    else:
+        base = DOCUMENT_PROMPTS.get(doc_type, DOCUMENT_PROMPTS["General"])
 
     if not fields:
         return base

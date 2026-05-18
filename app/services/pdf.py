@@ -1,10 +1,12 @@
+import asyncio
+import io
 import os
 import tempfile
 from typing import Any, Dict, List, TypedDict
-from app.core.config import logger
-from app.utils.helpers import _pil_to_content_item
 
-# ── Docling availability check ─────────────────────────────────────────────────
+from app.core.config import logger, MAX_IMAGES
+from app.utils.image import pil_to_content_item
+
 try:
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, EasyOcrOptions
@@ -19,23 +21,12 @@ except ImportError:
 
 class PageData(TypedDict):
     page_no: int
-    image: Dict[str, Any]               # Full page base64 image_url content dict
-    table_images: List[Dict[str, Any]]   # Table crop base64 image_url content dicts
-    markdown: str                        # Extracted text for this page
+    image: Dict[str, Any]
+    table_images: List[Dict[str, Any]]
+    markdown: str
 
 
-def _extract_pages_with_docling(pdf_bytes: bytes) -> List[PageData]:
-    """
-    Use Docling to extract per-page data from a PDF:
-      - full page image (base64)
-      - table crop images (base64)
-      - page-specific markdown text
-
-    Returns a list of PageData dicts, one per page.
-    """
-    if not _DOCLING_AVAILABLE:
-        raise RuntimeError("Docling is not installed.")
-
+def _run_docling(pdf_bytes: bytes) -> List[PageData]:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
@@ -43,28 +34,18 @@ def _extract_pages_with_docling(pdf_bytes: bytes) -> List[PageData]:
     try:
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = True
-        pipeline_options.table_structure_options = TableStructureOptions(
-            do_cell_matching=True,
-        )
+        pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
         pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=False)
-        pipeline_options.accelerator_options = AcceleratorOptions(
-            device=AcceleratorDevice.CPU,
-        )
+        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
         pipeline_options.images_scale = 2.0
         pipeline_options.generate_page_images = True
 
         converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options,
-                )
-            }
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
-
         result = converter.convert(tmp_path)
         doc = result.document
 
-        # Pre-group tables and text items by page — O(n) once instead of O(pages×n)
         tables_by_page: Dict[int, list] = {}
         for table in doc.tables:
             for p in (getattr(table, "prov", None) or []):
@@ -77,34 +58,63 @@ def _extract_pages_with_docling(pdf_bytes: bytes) -> List[PageData]:
                     text_by_page.setdefault(p.page_no, []).append(item.text)
 
         pages: List[PageData] = []
-
         for page_no, page in doc.pages.items():
             if page.image is None:
                 logger.warning("Page %d has no image, skipping.", page_no)
                 continue
-
-            page_image_item = _pil_to_content_item(page.image.pil_image)
 
             table_image_items: List[Dict[str, Any]] = []
             for table in tables_by_page.get(page_no, []):
                 try:
                     table_img = table.get_image(doc)
                     if table_img:
-                        table_image_items.append(_pil_to_content_item(table_img))
+                        table_image_items.append(pil_to_content_item(table_img))
                 except Exception as e:
                     logger.warning("Could not extract table image on page %d: %s", page_no, e)
 
-            page_text = "\n".join(text_by_page.get(page_no, []))
-
             pages.append(PageData(
                 page_no=page_no,
-                image=page_image_item,
+                image=pil_to_content_item(page.image.pil_image),
                 table_images=table_image_items,
-                markdown=page_text,
+                markdown="\n".join(text_by_page.get(page_no, [])),
             ))
 
         logger.info("Docling extracted %d pages from PDF.", len(pages))
         return pages
-
     finally:
         os.unlink(tmp_path)
+
+
+def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
+    import pdfplumber
+    pages: List[PageData] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for i, page in enumerate(pdf.pages):
+            if i >= max_pages:
+                break
+            im = page.to_image(resolution=500).original
+            pages.append(PageData(
+                page_no=i + 1,
+                image=pil_to_content_item(im),
+                table_images=[],
+                markdown="",
+            ))
+    return pages
+
+
+async def extract_pages(pdf_bytes: bytes, use_docling: bool = True) -> List[PageData]:
+    if use_docling and _DOCLING_AVAILABLE:
+        logger.info("Routing PDF through Docling page-by-page pipeline.")
+        try:
+            pages = await asyncio.to_thread(_run_docling, pdf_bytes)
+            if pages:
+                return pages
+            logger.warning("Docling returned no pages, falling back to pdfplumber.")
+        except Exception as e:
+            logger.warning("Docling failed (%s), falling back to pdfplumber.", e)
+
+    logger.info("Falling back to pdfplumber image-based OCR.")
+    try:
+        return await asyncio.to_thread(_run_pdfplumber, pdf_bytes)
+    except Exception as e:
+        raise ValueError(f"Failed to process PDF: {e}") from e
