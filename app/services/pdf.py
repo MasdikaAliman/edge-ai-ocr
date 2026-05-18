@@ -69,7 +69,7 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
                     if table_img:
                         table_image_items.append(pil_to_content_item(table_img))
                 except Exception as e:
-                    logger.warning("Could not extract table image on page %d: %s", page_no, e)
+                    logger.error("Could not extract table image on page %d: %s", page_no, e)
 
             pages.append(PageData(
                 page_no=page_no,
@@ -108,12 +108,13 @@ async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
             pages = await asyncio.to_thread(_run_docling, pdf_bytes)
             if pages:
                 return pages
-            logger.warning("Docling returned no pages, falling back to pdfplumber.")
+            logger.error("Docling returned no pages, falling back to pdfplumber.")
         except Exception as e:
-            logger.warning("Docling failed (%s), falling back to pdfplumber.", e)
+            logger.error("Docling failed (%s), falling back to pdfplumber.", e)
 
     logger.info("Falling back to pdfplumber image-based OCR.")
     try:
         return await asyncio.to_thread(_run_pdfplumber, pdf_bytes)
     except Exception as e:
-        raise ValueError(f"Failed to process PDF: {e}") from e
+        logger.error("pdfplumber also failed to process PDF: %s", e)
+        return []
