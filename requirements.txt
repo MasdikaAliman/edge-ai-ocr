@@ -11,3 +11,4 @@ pdfplumber
 Pillow
 python-multipart
 python-dotenv
+docling
