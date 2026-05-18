@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import WithJsonSchema
 
-from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_IMAGES, DocumentType
-from app.core.prompts import DOCUMENT_PROMPTS
+from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_IMAGES, DocumentType, logger
+from app.core.prompts import DOCUMENT_PROMPTS, BASE_DIRECTIVES
 from app.services.pdf import PageData, _DOCLING_AVAILABLE, extract_pages
 from app.services.pipeline import run_ocr
+from app.utils.call_log import create_call_log
 from app.utils.image import bytes_to_content_item
 
 UploadFile = Annotated[UF, WithJsonSchema({"type": "string", "format": "binary"})]
@@ -109,7 +110,14 @@ async def process_ocr_document(
     ),
 ):
     image_pages = await _process_files(files)
-    return await run_ocr(document_type, image_pages, None, "")
+    result = await run_ocr(document_type, image_pages, None, "")
+    create_call_log(
+        request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "files": [f.filename for f in files]},
+        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
+        messages_sent=result.pop("messages_log", []),
+        output=result,
+    )
+    return result
 
 
 @app.post(
@@ -126,13 +134,20 @@ async def process_ocr_fields(
         ),
     ),
     fields: List[str] = Form(
-        ...,
+        [],
         description="List of snake_case field names to extract. Add each as a separate 'fields' parameter.",
     ),
 ):
     parsed_fields = [f for f in fields if f and f.strip()] or None
     image_pages = await _process_files(files)
-    return await run_ocr("Custom", image_pages, parsed_fields, "")
+    result = await run_ocr("Custom", image_pages, parsed_fields, "")
+    create_call_log(
+        request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "files": [f.filename for f in files]},
+        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
+        messages_sent=result.pop("messages_log", []),
+        output=result,
+    )
+    return result
 
 
 @app.post(
@@ -149,12 +164,19 @@ async def process_ocr_prompt(
         ),
     ),
     custom_prompt: str = Form(
-        ...,
+        BASE_DIRECTIVES,
         description="Custom instruction prepended to the model input.",
     ),
 ):
     image_pages = await _process_files(files)
-    return await run_ocr("Custom", image_pages, None, custom_prompt)
+    result = await run_ocr("Custom", image_pages, None, custom_prompt)
+    create_call_log(
+        request_data={"endpoint": "/ocr/process/prompt", "custom_prompt": custom_prompt, "files": [f.filename for f in files]},
+        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
+        messages_sent=result.pop("messages_log", []),
+        output=result,
+    )
+    return result
 
 
 @app.get("/health", tags=["Utility"])

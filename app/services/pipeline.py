@@ -21,6 +21,7 @@ class OCRState(TypedDict):
     current_idx: int
     page_results: List[Dict[str, Any]]
     final_result: Dict[str, Any]
+    messages_log: List[Dict[str, Any]]
 
 
 def process_page_node(state: OCRState) -> Dict[str, Any]:
@@ -60,6 +61,9 @@ def process_page_node(state: OCRState) -> Dict[str, Any]:
     return {
         "page_results": state.get("page_results", []) + [extracted_data],
         "current_idx": idx + 1,
+        "messages_log": state.get("messages_log", []) + [
+            {"page_no": page_data["page_no"], "messages": messages, "response": extracted_data}
+        ],
     }
 
 
@@ -103,7 +107,17 @@ IMPORTANT:
         new_data = {}
 
     merged = {**last_result, **new_data}
-    return {"page_results": state["page_results"][:-1] + [merged]}
+    update = {"page_results": state["page_results"][:-1] + [merged]}
+    update.update(_log_reprocess(state, new_data))
+    return update
+
+
+def _log_reprocess(state: OCRState, new_data: dict) -> Dict[str, Any]:
+    return {
+        "messages_log": state.get("messages_log", []) + [
+            {"page_no": state["current_idx"] - 1, "reprocess": True, "response": new_data}
+        ],
+    }
 
 
 def check_missing_fields(state: OCRState) -> str:
@@ -167,7 +181,7 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
         logger.error("Error in aggregation node: %s", e)
         final_data = {"error": f"Aggregation failed: {str(e)}", "partial_results": page_results}
 
-    return {"final_result": final_data}
+    return {"final_result": final_data, "messages_log": state.get("messages_log", []) + [{"aggregate": True}]}
 
 
 def _build_graph():
@@ -233,11 +247,16 @@ async def run_ocr(
         "current_idx": 0,
         "page_results": [],
         "final_result": {},
+        "messages_log": [],
     }
 
     try:
         final_state = await _ocr_graph.ainvoke(initial_state)
-        return {"success": True, "data": final_state.get("final_result", {})}
+        return {
+            "success": True,
+            "data": final_state.get("final_result", {}),
+            "messages_log": final_state.get("messages_log", []),
+        }
     except HTTPException:
         raise
     except Exception as e:
