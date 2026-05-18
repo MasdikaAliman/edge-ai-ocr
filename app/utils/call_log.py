@@ -21,7 +21,13 @@ def _serialize(obj: Any) -> Any:
             return base64.b64encode(obj).decode("utf-8")
         except Exception:
             return "<binary data>"
-    return obj
+    if hasattr(obj, "__class__") and obj.__class__.__name__ in ("SystemMessage", "HumanMessage", "AIMessage"):
+        return {"type": obj.__class__.__name__, "content": str(obj.content)}
+    try:
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        return str(obj)
 
 
 def create_call_log(
