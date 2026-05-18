@@ -41,7 +41,7 @@ async def custom_openapi():
     return JSONResponse(content=app.openapi(), media_type="application/json; charset=utf-8")
 
 
-async def _process_files(files: List[UploadFile], use_docling: bool) -> List[PageData]:
+async def _process_files(files: List[UploadFile]) -> List[PageData]:
     pdf_bytes: Optional[bytes] = None
     image_pages: List[PageData] = []
 
@@ -84,7 +84,7 @@ async def _process_files(files: List[UploadFile], use_docling: bool) -> List[Pag
             )
 
     if pdf_bytes is not None:
-        pdf_pages = await extract_pages(pdf_bytes, use_docling)
+        pdf_pages = await extract_pages(pdf_bytes)
         image_pages = pdf_pages + image_pages
 
     return image_pages
@@ -107,12 +107,8 @@ async def process_ocr_document(
         ...,
         description="Document type. Options: " + ", ".join(DOCUMENT_PROMPTS.keys()),
     ),
-    use_docling: bool = Form(
-        default=True,
-        description="If True, native PDFs are parsed via Docling. Set to False to force image-based VLM path."
-    ),
 ):
-    image_pages = await _process_files(files, use_docling)
+    image_pages = await _process_files(files)
     return await run_ocr(document_type, image_pages, None, "")
 
 
@@ -133,13 +129,9 @@ async def process_ocr_fields(
         ...,
         description="List of snake_case field names to extract. Add each as a separate 'fields' parameter.",
     ),
-    use_docling: bool = Form(
-        default=True,
-        description="If True, native PDFs are parsed via Docling. Set to False to force image-based VLM path."
-    ),
 ):
     parsed_fields = [f for f in fields if f and f.strip()] or None
-    image_pages = await _process_files(files, use_docling)
+    image_pages = await _process_files(files)
     return await run_ocr("Custom", image_pages, parsed_fields, "")
 
 
@@ -160,12 +152,8 @@ async def process_ocr_prompt(
         ...,
         description="Custom instruction prepended to the model input.",
     ),
-    use_docling: bool = Form(
-        default=True,
-        description="If True, native PDFs are parsed via Docling. Set to False to force image-based VLM path."
-    ),
 ):
-    image_pages = await _process_files(files, use_docling)
+    image_pages = await _process_files(files)
     return await run_ocr("Custom", image_pages, None, custom_prompt)
 
 
