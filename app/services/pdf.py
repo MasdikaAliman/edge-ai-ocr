@@ -33,10 +33,9 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
 
     try:
         pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = True
+        pipeline_options.do_ocr = False
         pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
-        pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=False)
-        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
+        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU, num_workers=2)
         pipeline_options.images_scale = 2.0
         pipeline_options.generate_page_images = True
 
@@ -102,8 +101,8 @@ def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageD
     return pages
 
 
-async def extract_pages(pdf_bytes: bytes, use_docling: bool = True) -> List[PageData]:
-    if use_docling and _DOCLING_AVAILABLE:
+async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
+    if _DOCLING_AVAILABLE:
         logger.info("Routing PDF through Docling page-by-page pipeline.")
         try:
             pages = await asyncio.to_thread(_run_docling, pdf_bytes)
