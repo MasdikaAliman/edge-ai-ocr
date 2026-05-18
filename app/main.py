@@ -43,6 +43,18 @@ async def custom_openapi():
 
 
 async def _process_files(files: List[UploadFile]) -> List[PageData]:
+    if len(files) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_type": "no_files",
+                "message": "At least one file is required.",
+            },
+        )
+
+    pdf_count = 0
+    image_count = 0
     pdf_bytes: Optional[bytes] = None
     image_pages: List[PageData] = []
 
@@ -63,8 +75,28 @@ async def _process_files(files: List[UploadFile]) -> List[PageData]:
         try:
             mime = content_type.split(";")[0].strip().lower()
             if mime == "application/pdf":
+                pdf_count += 1
+                if pdf_count > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "multiple_pdfs",
+                            "message": "Only a single PDF file is allowed.",
+                        },
+                    )
                 pdf_bytes = raw_bytes
             else:
+                image_count += 1
+                if image_count > MAX_IMAGES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "too_many_images",
+                            "message": f"Too many images. Maximum is {MAX_IMAGES}.",
+                        },
+                    )
                 content_item = bytes_to_content_item(raw_bytes, content_type)
                 image_pages.append(PageData(
                     page_no=len(image_pages) + 1,
