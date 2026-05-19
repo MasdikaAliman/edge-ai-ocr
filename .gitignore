@@ -50,3 +50,4 @@ htmlcov/
 /.claude
 *.json
 /app/call_logs
+/models

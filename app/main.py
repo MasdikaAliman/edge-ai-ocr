@@ -8,7 +8,7 @@ from pydantic import WithJsonSchema
 
 from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_IMAGES, DocumentType, logger
 from app.core.prompts import DOCUMENT_PROMPTS, BASE_DIRECTIVES
-from app.services.pdf import PageData, _DOCLING_AVAILABLE, extract_pages
+from app.services.pdf import PageData, extract_pages
 from app.services.pipeline import run_ocr
 from app.utils.call_log import create_call_log
 from app.utils.image import bytes_to_content_item
@@ -22,11 +22,10 @@ app = FastAPI(
         "Accepts images as **base64 JSON** or **multipart file uploads**.\n\n"
         "Features a **LangGraph-powered page-by-page pipeline** that sends each page's "
         "full image, table crops, and extracted markdown to the VLM for maximum accuracy.\n\n"
-        "PDFs are processed via **Docling** (page images + table crops + markdown) when available, "
-        "falling back to pdfplumber image-based OCR.\n\n"
+        "PDFs are processed via **Docling** (page images + table crops + markdown).\n\n"
         "Supported document types: " + ", ".join(DOCUMENT_PROMPTS.keys())
     ),
-    version="5.0.0",
+    version="5.1.0",
 )
 
 app.add_middleware(
@@ -217,7 +216,6 @@ def health_check():
         "vllm_max_model_len": 11000,
         "max_image_size": f"{MAX_IMAGE_SIZE}×{MAX_IMAGE_SIZE}",
         "max_images_per_request": MAX_IMAGES,
-        "docling_available": _DOCLING_AVAILABLE,
     }
     try:
         resp = requests.get(f"{BASE_URL_LLM}/health", timeout=5)
@@ -236,8 +234,7 @@ def health_check():
 async def root():
     return {
         "name": "Document OCR API",
-        "version": "5.0.0",
-        "docling_available": _DOCLING_AVAILABLE,
+        "version": "5.1.0",
         "supported_document_types": list(DOCUMENT_PROMPTS.keys()),
         "endpoints": {
             "document_ocr": "POST /ocr/process/document",

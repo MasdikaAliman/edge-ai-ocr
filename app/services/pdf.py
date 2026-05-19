@@ -7,16 +7,10 @@ from typing import Any, Dict, List, TypedDict
 from app.core.config import logger, MAX_IMAGES
 from app.utils.image import pil_to_content_item
 
-try:
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, EasyOcrOptions
-    from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
-    from docling.datamodel.base_models import InputFormat
-    _DOCLING_AVAILABLE = True
-    logger.info("Docling is available — PDF text extraction enabled.")
-except ImportError:
-    _DOCLING_AVAILABLE = False
-    logger.warning("Docling not installed. PDFs will fall back to image-based OCR.")
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, EasyOcrOptions
+from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
+from docling.datamodel.base_models import InputFormat
 
 
 class PageData(TypedDict):
@@ -102,17 +96,16 @@ def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageD
 
 
 async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
-    if _DOCLING_AVAILABLE:
-        logger.info("Routing PDF through Docling page-by-page pipeline.")
-        try:
-            pages = await asyncio.to_thread(_run_docling, pdf_bytes)
-            if pages:
-                return pages
-            logger.error("Docling returned no pages, falling back to pdfplumber.")
-        except Exception as e:
-            logger.error("Docling failed (%s), falling back to pdfplumber.", e)
+    logger.info("Routing PDF through Docling pipeline.")
+    try:
+        pages = await asyncio.to_thread(_run_docling, pdf_bytes)
+        if pages:
+            return pages
+        logger.error("Docling returned no pages, falling back to pdfplumber.")
+    except Exception as e:
+        logger.error("Docling failed (%s), falling back to pdfplumber.", e)
 
-    logger.info("Falling back to pdfplumber image-based OCR.")
+    logger.info("Falling back to pdfplumber image extraction.")
     try:
         return await asyncio.to_thread(_run_pdfplumber, pdf_bytes)
     except Exception as e:
