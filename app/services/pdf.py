@@ -8,15 +8,16 @@ from app.core.config import logger, MAX_IMAGES
 from app.utils.image import pil_to_content_item
 
 from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, EasyOcrOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions
 from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
 from docling.datamodel.base_models import InputFormat
-
+import pdfplumber
 
 class PageData(TypedDict):
     page_no: int
     image: Dict[str, Any]
     table_images: List[Dict[str, Any]]
+    figure_images: List[Dict[str, Any]]
     markdown: str
 
 
@@ -30,8 +31,10 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
         pipeline_options.do_ocr = False
         pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
         pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
-        pipeline_options.images_scale = 2.0
+        pipeline_options.images_scale = 3.0
         pipeline_options.generate_page_images = True
+        pipeline_options.generate_table_images = True
+        pipeline_options.generate_picture_images = True
 
         converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
@@ -44,6 +47,11 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
             for p in (getattr(table, "prov", None) or []):
                 tables_by_page.setdefault(p.page_no, []).append(table)
 
+        figures_by_page: Dict[int, list] = {}
+        for pic in getattr(doc, "pictures", []):
+            for p in (getattr(pic, "prov", None) or []):
+                figures_by_page.setdefault(p.page_no, []).append(pic)
+
         text_by_page: Dict[int, List[str]] = {}
         for item, _level in doc.iterate_items():
             if hasattr(item, "text") and hasattr(item, "prov") and item.prov:
@@ -51,7 +59,7 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
                     text_by_page.setdefault(p.page_no, []).append(item.text)
 
         pages: List[PageData] = []
-        for page_no, page in doc.pages.items():
+        for page_no, page in sorted(doc.pages.items()):
             if page.image is None:
                 logger.warning("Page %d has no image, skipping.", page_no)
                 continue
@@ -65,10 +73,20 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
                 except Exception as e:
                     logger.error("Could not extract table image on page %d: %s", page_no, e)
 
+            figure_image_items: List[Dict[str, Any]] = []
+            for pic in figures_by_page.get(page_no, []):
+                try:
+                    fig_img = pic.get_image(doc)
+                    if fig_img:
+                        figure_image_items.append(pil_to_content_item(fig_img))
+                except Exception as e:
+                    logger.error("Could not extract figure image on page %d: %s", page_no, e)
+
             pages.append(PageData(
                 page_no=page_no,
                 image=pil_to_content_item(page.image.pil_image),
                 table_images=table_image_items,
+                figure_images=figure_image_items,
                 markdown="\n".join(text_by_page.get(page_no, [])),
             ))
 
@@ -79,21 +97,57 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
 
 
 def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
-    import pdfplumber
     pages: List[PageData] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for i, page in enumerate(pdf.pages):
             if i >= max_pages:
                 break
-            im = page.to_image(resolution=500).original
+            im = page.to_image(resolution=200).original
+            native_text = page.extract_text(x_tolerance=3, y_tolerance=5) or ""
+
+            # Attempt table extraction as markdown hint
+            table_md = _extract_tables_markdown(page)
+            markdown = native_text
+            if table_md:
+                markdown += "\n\n" + table_md
+
             pages.append(PageData(
                 page_no=i + 1,
                 image=pil_to_content_item(im),
                 table_images=[],
-                markdown="",
+                figure_images=[],
+                markdown=markdown,
             ))
     return pages
 
+def _extract_tables_markdown(page: Any) -> str:
+    _TABLE_SETTINGS_LINES = {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "lines",
+        "snap_tolerance": 5,
+        "join_tolerance": 5,
+        "edge_min_length": 10,
+        "min_words_vertical": 2,
+        "min_words_horizontal": 1,
+    }
+    _TABLE_SETTINGS_TEXT = {
+        "vertical_strategy": "text",
+        "horizontal_strategy": "text",
+        "snap_tolerance": 5,
+        "join_tolerance": 5,
+        "min_words_vertical": 2,
+        "min_words_horizontal": 1,
+    }
+
+    tables = page.extract_tables(_TABLE_SETTINGS_LINES)
+    if not tables:
+        tables = page.extract_tables(_TABLE_SETTINGS_TEXT)
+    parts = []
+    for table in (tables or []):
+        if table:
+            rows = [" | ".join(cell or "" for cell in row) for row in table]
+            parts.append("\n".join(rows))
+    return "\n\n".join(parts)
 
 async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
     logger.info("Routing PDF through Docling pipeline.")
