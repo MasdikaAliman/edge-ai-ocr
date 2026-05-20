@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
-from app.core.config import logger, MAX_IMAGES, model
+from app.core.config import logger, MAX_DOC_PAGES, model
 from app.core.prompts import (
     get_prompt_for_document,
     get_prompt_for_fields,
@@ -253,13 +253,13 @@ async def run_ocr(
             },
         )
 
-    if len(pages) > MAX_IMAGES:
+    if len(pages) > MAX_DOC_PAGES:
         raise HTTPException(
             status_code=400,
             detail={
                 "success": False,
                 "error_type": "image_limit_exceeded",
-                "message": f"Too many pages. Maximum is {MAX_IMAGES}, but {len(pages)} were provided.",
+                "message": f"Too many pages. Maximum is {MAX_DOC_PAGES}, but {len(pages)} were provided.",
             },
         )
 

@@ -4,7 +4,8 @@ import os
 import tempfile
 from typing import Any, Dict, List, TypedDict
 
-from app.core.config import logger, MAX_IMAGES
+from fastapi import HTTPException
+from app.core.config import logger, MAX_DOC_PAGES
 from app.utils.image import pil_to_content_item
 
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -21,7 +22,7 @@ class PageData(TypedDict):
     markdown: str
 
 
-def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
+def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
@@ -98,7 +99,7 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData
         os.unlink(tmp_path)
 
 
-def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
+def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
     pages: List[PageData] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for i, page in enumerate(pdf.pages):
@@ -151,7 +152,25 @@ def _extract_tables_markdown(page: Any) -> str:
             parts.append("\n".join(rows))
     return "\n\n".join(parts)
 
-async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
+async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
+    # Check total page count first to prevent silent truncation
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            num_pages = len(pdf.pages)
+            if num_pages > max_pages:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "page_limit_exceeded",
+                        "message": f"Too many pages. Maximum is {max_pages}, but the PDF has {num_pages} pages.",
+                    },
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Could not pre-verify PDF page count: %s", e)
+
     logger.info("Routing PDF through Docling pipeline.")
     try:
         pages = await asyncio.to_thread(_run_docling, pdf_bytes, max_pages)

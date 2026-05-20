@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import WithJsonSchema
 
-from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_IMAGES, DocumentType, logger
+from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_DOC_PAGES, DocumentType, logger
 from app.core.prompts import DOCUMENT_PROMPTS, BASE_DIRECTIVES
 from app.services.pdf import PageData, extract_pages
 from app.services.pipeline import run_ocr
@@ -86,13 +86,13 @@ async def _process_files(files: List[UploadFile]) -> List[PageData]:
                 pdf_bytes = raw_bytes
             else:
                 image_count += 1
-                if image_count > MAX_IMAGES:
+                if image_count > MAX_DOC_PAGES:
                     raise HTTPException(
                         status_code=400,
                         detail={
                             "success": False,
                             "error_type": "too_many_images",
-                            "message": f"Too many images. Maximum is {MAX_IMAGES}.",
+                            "message": f"Too many images. Maximum is {MAX_DOC_PAGES}.",
                         },
                     )
                 content_item = bytes_to_content_item(raw_bytes, content_type)
@@ -130,7 +130,7 @@ async def process_ocr_document(
     files: List[UploadFile] = File(
         ...,
         description=(
-            f"One or more image/PDF files to process (max {MAX_IMAGES} pages/images). "
+            f"One or more image/PDF files to process (max {MAX_DOC_PAGES} pages/images). "
             "Accepted formats: JPEG, PNG, WebP, GIF, TIFF, PDF."
         ),
     ),
@@ -159,7 +159,7 @@ async def process_ocr_fields(
     files: List[UploadFile] = File(
         ...,
         description=(
-            f"One or more image/PDF files to process (max {MAX_IMAGES} pages/images). "
+            f"One or more image/PDF files to process (max {MAX_DOC_PAGES} pages/images). "
             "Accepted formats: JPEG, PNG, WebP, GIF, TIFF, PDF."
         ),
     ),
@@ -189,7 +189,7 @@ async def process_ocr_prompt(
     files: List[UploadFile] = File(
         ...,
         description=(
-            f"One or more image/PDF files to process (max {MAX_IMAGES} pages/images). "
+            f"One or more image/PDF files to process (max {MAX_DOC_PAGES} pages/images). "
             "Accepted formats: JPEG, PNG, WebP, GIF, TIFF, PDF."
         ),
     ),
@@ -214,7 +214,7 @@ def health_check():
     base_info = {
         "vllm_max_model_len": 11000,
         "max_image_size": f"{MAX_IMAGE_SIZE}×{MAX_IMAGE_SIZE}",
-        "max_images_per_request": MAX_IMAGES,
+        "max_images_per_request": MAX_DOC_PAGES,
     }
     try:
         resp = requests.get(f"{BASE_URL_LLM}/health", timeout=5)
