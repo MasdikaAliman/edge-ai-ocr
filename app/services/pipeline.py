@@ -30,8 +30,8 @@ class OCRState(TypedDict):
 
 def _build_user_message(page_data: PageData, doc_type: str, custom_prompt: str) -> str:
     parts = [f"This is page {page_data['page_no']} of a {doc_type} document."]
-    if custom_prompt:
-        parts.append(f"\nAdditional instructions: {custom_prompt}")
+    if doc_type == "Custom" and custom_prompt:
+        parts.append(f"\n\nInstructions:\n{custom_prompt}")
     markdown = page_data.get("markdown", "")
     if markdown:
         parts.append(f"\n\n### Page {page_data['page_no']} Text/Markdown:\n{markdown}")
@@ -61,10 +61,8 @@ def process_page_node(state: OCRState) -> Dict[str, Any]:
         content.append(table_img)
 
     if doc_type == "Custom":
-        system_prompt = get_prompt_for_fields(fields if fields is not None else None)
-    elif custom_prompt:
         system_prompt = get_prompt_for_custom(custom_prompt)
-    elif fields is not None:
+    elif doc_type == "Fields":
         system_prompt = get_prompt_for_fields(fields)
     else:
         system_prompt = get_prompt_for_document(doc_type)

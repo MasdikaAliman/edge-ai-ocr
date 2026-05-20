@@ -170,7 +170,7 @@ async def process_ocr_fields(
 ):
     parsed_fields = [f for f in fields if f and f.strip()] or None
     image_pages = await _process_files(files)
-    result = await run_ocr("Custom", image_pages, parsed_fields, "")
+    result = await run_ocr("Fields", image_pages, parsed_fields, "")
     create_call_log(
         request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "files": [f.filename for f in files]},
         pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],

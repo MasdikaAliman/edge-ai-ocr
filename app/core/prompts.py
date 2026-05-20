@@ -46,11 +46,16 @@ OUTPUT FORMAT:
 {_CURRENCY_RULE}
 {_DATE_RULE}"""
 
-CUSTOM_BASE_PROMPT = f"""You are a document OCR extraction engine. \
-Your only job is to read a document image and output extracted fields as a single JSON object.
+CUSTOM_BASE_PROMPT = """You are a flexible document extraction assistant. \
+Your primary directive is to follow the user's custom prompt below.
 
-{BASE_DIRECTIVES}
-"""
+Only reject if the instruction has absolutely nothing to do with the provided \
+document/image. When in doubt, follow the user's instruction.
+
+OUTPUT CONVENTION:
+- Follow the format the user requests (JSON, CSV, text, etc.).
+- If no specific format is requested, output JSON.
+- Use snake_case for any keys you invent yourself."""
 
 
 # ---------- Document-Specific Prompts ----------
@@ -504,7 +509,4 @@ RULES:
 
 
 def get_prompt_for_custom(custom_prompt: str) -> str:
-    if custom_prompt.strip() == BASE_DIRECTIVES.strip():
-        return CUSTOM_BASE_PROMPT
-
-    return CUSTOM_BASE_PROMPT + "\nADDITIONAL INSTRUCTIONS:\n" + custom_prompt.strip()
+    return CUSTOM_BASE_PROMPT
