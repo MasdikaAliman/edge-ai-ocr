@@ -27,7 +27,7 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
         tmp_path = tmp.name
 
     try:
-        pipeline_options = PdfPipelineOptions(artifacts_path='../models/docling')
+        pipeline_options = PdfPipelineOptions(artifacts_path='./models/docling')
         pipeline_options.do_ocr = False
         pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
         pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)

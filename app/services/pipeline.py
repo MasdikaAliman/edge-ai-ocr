@@ -6,7 +6,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
 from app.core.config import logger, MAX_IMAGES, model
-from app.core.prompts import DEFAULT_USER_PROMPTS, get_prompt
+from app.core.prompts import (
+    get_prompt_for_document,
+    get_prompt_for_fields,
+    get_prompt_for_custom,
+)
 from app.services.pdf import PageData
 from app.utils.errors import handle_llm_exception
 from app.utils.image import validate_content
@@ -24,6 +28,24 @@ class OCRState(TypedDict):
     messages_log: List[Dict[str, Any]]
 
 
+def _build_user_message(page_data: PageData, doc_type: str, custom_prompt: str) -> str:
+    parts = [f"This is page {page_data['page_no']} of a {doc_type} document."]
+    if custom_prompt:
+        parts.append(f"\nAdditional instructions: {custom_prompt}")
+    markdown = page_data.get("markdown", "")
+    if markdown:
+        parts.append(f"\n\n### Page {page_data['page_no']} Text/Markdown:\n{markdown}")
+    return "\n".join(parts)
+
+
+def _invoke_model(messages: list) -> dict:
+    response = model.invoke(messages)
+    parsed = json.loads(clean_json_response(response.content))
+    if isinstance(parsed, list):
+        return parsed[0] if parsed else {}
+    return parsed
+
+
 def process_page_node(state: OCRState) -> Dict[str, Any]:
     idx = state["current_idx"]
     page_data = state["pages"][idx]
@@ -31,28 +53,26 @@ def process_page_node(state: OCRState) -> Dict[str, Any]:
     fields = state["fields"]
     custom_prompt = state.get("custom_prompt", "")
 
-    user_text = custom_prompt or DEFAULT_USER_PROMPTS.get(doc_type, DEFAULT_USER_PROMPTS["General"])
-
-    content: List[Dict[str, Any]] = []
-    page_markdown = page_data.get("markdown", "")
-    if page_markdown:
-        content.append({
-            "type": "text",
-            "text": f"{user_text}\n\n### Page {page_data['page_no']} Text/Markdown:\n{page_markdown}",
-        })
-    else:
-        content.append({"type": "text", "text": user_text})
-
+    content: List[Dict[str, Any]] = [
+        {"type": "text", "text": _build_user_message(page_data, doc_type, custom_prompt)}
+    ]
     content.append(page_data["image"])
     for table_img in page_data.get("table_images", []):
         content.append(table_img)
 
-    system_prompt = get_prompt(doc_type, fields)
+    if doc_type == "Custom":
+        system_prompt = get_prompt_for_fields(fields if fields is not None else None)
+    elif custom_prompt:
+        system_prompt = get_prompt_for_custom(custom_prompt)
+    elif fields is not None:
+        system_prompt = get_prompt_for_fields(fields)
+    else:
+        system_prompt = get_prompt_for_document(doc_type)
+
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=content)]
 
     try:
-        response = model.invoke(messages)
-        extracted_data = json.loads(clean_json_response(response.content))
+        extracted_data = _invoke_model(messages)
         logger.info("Page %d extracted successfully.", page_data["page_no"])
     except Exception as e:
         logger.error("Error extracting page %d: %s", page_data["page_no"], e)
@@ -75,12 +95,15 @@ def reprocess_page_node(state: OCRState) -> Dict[str, Any]:
 
     missing = [
         f for f in required_fields
-        if f not in last_result or last_result.get(f) in ["", None]
+        if f not in last_result
     ]
     if not missing:
         return {}
 
-    prompt = f"""Some fields were missing from the previous extraction:
+    doc_type = state["document_type"]
+    prompt = f"""You are reprocessing page {page_data['page_no']} of a {doc_type} document.
+
+The following fields were missing from the previous extraction:
 {missing}
 
 Re-analyze the document carefully, focusing on tables and structured rows.
@@ -100,8 +123,7 @@ IMPORTANT:
     ]
 
     try:
-        response = model.invoke(messages)
-        new_data = json.loads(clean_json_response(response.content))
+        new_data = _invoke_model(messages)
         logger.info("Reprocess page %d found additional data.", page_data["page_no"])
     except Exception:
         new_data = {}
@@ -120,24 +142,20 @@ def _log_reprocess(state: OCRState, new_data: dict) -> Dict[str, Any]:
     }
 
 
-def check_missing_fields(state: OCRState) -> str:
-    last_result = state["page_results"][-1] if state["page_results"] else {}
+def _after_process_page(state: OCRState) -> str:
     required_fields = [f for f in (state.get("fields") or []) if f and f.strip()]
-
-    if not required_fields:
-        return "next_step"
-
-    missing = [
-        f for f in required_fields
-        if f not in last_result or last_result.get(f) in ["", None]
-    ]
-    if missing:
-        logger.info("Missing fields detected, will reprocess: %s", missing)
-        return "reprocess_page"
-    return "next_step"
+    if required_fields:
+        last_result = state["page_results"][-1] if state["page_results"] else {}
+        missing = [f for f in required_fields if f not in last_result]
+        if missing:
+            logger.info("Missing fields detected, will reprocess: %s", missing)
+            return "reprocess_page"
+    if state["current_idx"] < len(state["pages"]):
+        return "process_page"
+    return "aggregate_results"
 
 
-def _next_step(state: OCRState) -> str:
+def _after_reprocess(state: OCRState) -> str:
     if state["current_idx"] < len(state["pages"]):
         return "process_page"
     return "aggregate_results"
@@ -154,7 +172,8 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
 
     system_prompt = (
         f"You are an expert data arbitration engine for {doc_type} documents.\n"
-        "Multiple pages were OCR'd independently. Produce ONE final JSON object.\n"
+        "Multiple pages from the same document were OCR'd independently. "
+        "Produce ONE final JSON object.\n"
         "RULES:\n"
         "- For each field, choose the most complete and credible value across all pages.\n"
         "- If the same field appears on multiple pages with DIFFERENT values, prefer:\n"
@@ -176,6 +195,8 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
     try:
         response = model.invoke(messages)
         final_data = json.loads(clean_json_response(response.content))
+        if isinstance(final_data, list):
+            final_data = final_data[0] if final_data else {}
         logger.info("Aggregation complete.")
     except Exception as e:
         logger.error("Error in aggregation node: %s", e)
@@ -188,21 +209,29 @@ def _build_graph():
     workflow = StateGraph(OCRState)
     workflow.add_node("process_page", process_page_node)
     workflow.add_node("reprocess_page", reprocess_page_node)
-    workflow.add_node("next_step", lambda state: {})
     workflow.add_node("aggregate_results", aggregate_node)
 
     workflow.add_edge(START, "process_page")
+
     workflow.add_conditional_edges(
         "process_page",
-        check_missing_fields,
-        {"reprocess_page": "reprocess_page", "next_step": "next_step"},
+        _after_process_page,
+        {
+            "reprocess_page": "reprocess_page",
+            "process_page": "process_page",
+            "aggregate_results": "aggregate_results",
+        },
     )
-    workflow.add_edge("reprocess_page", "next_step")
+
     workflow.add_conditional_edges(
-        "next_step",
-        _next_step,
-        {"process_page": "process_page", "aggregate_results": "aggregate_results"},
+        "reprocess_page",
+        _after_reprocess,
+        {
+            "process_page": "process_page",
+            "aggregate_results": "aggregate_results",
+        },
     )
+
     workflow.add_edge("aggregate_results", END)
     return workflow.compile()
 

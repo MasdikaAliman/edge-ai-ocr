@@ -51,3 +51,4 @@ htmlcov/
 *.json
 /app/call_logs
 /models
+/call_logs
