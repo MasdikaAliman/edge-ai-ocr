@@ -30,8 +30,8 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
         pipeline_options = PdfPipelineOptions(artifacts_path='./models/docling')
         pipeline_options.do_ocr = False
         pipeline_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
-        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
-        pipeline_options.images_scale = 3.0
+        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CUDA)
+        pipeline_options.images_scale = 2.0
         pipeline_options.generate_page_images = True
         pipeline_options.generate_table_images = True
         pipeline_options.generate_picture_images = True

@@ -60,7 +60,6 @@ async def _process_files(files: List[UploadFile]) -> List[PageData]:
     for upload in files:
         content_type = upload.content_type or "application/octet-stream"
         raw_bytes = await upload.read()
-
         if not raw_bytes:
             raise HTTPException(
                 status_code=400,
@@ -114,7 +113,7 @@ async def _process_files(files: List[UploadFile]) -> List[PageData]:
                     "message": f"Could not process file '{upload.filename}': {e}",
                 },
             )
-
+    
     if pdf_bytes is not None:
         pdf_pages = await extract_pages(pdf_bytes)
         image_pages = pdf_pages + image_pages
