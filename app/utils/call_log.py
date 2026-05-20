@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
 from app.core.config import logger
 
 CALL_LOG_DIR = os.getenv("CALL_LOG_DIR", "call_logs")
@@ -35,7 +37,7 @@ class MessageSerializer:
                 return base64.b64encode(obj).decode("utf-8")
             except Exception:
                 return "<binary data>"
-        if hasattr(obj, "__class__") and obj.__class__.__name__ in ("SystemMessage", "HumanMessage", "AIMessage"):
+        if isinstance(obj, (SystemMessage, HumanMessage, AIMessage)):
             return {"type": obj.__class__.__name__, "content": self.serialize(obj.content)}
         try:
             json.dumps(obj)
@@ -76,10 +78,8 @@ def create_call_log(
     log_data = {
         "timestamp": timestamp,
         "request": request_data,
-        "pdf_result": pdf_result,
         "messages_sent": [serializer.serialize(msg) for msg in messages_sent],
-        "output": output,
-        "image_references": serializer.saved_images,
+        "output": serializer.serialize(output),
     }
 
     log_file = call_dir / "call.json"

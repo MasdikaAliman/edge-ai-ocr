@@ -21,7 +21,7 @@ class PageData(TypedDict):
     markdown: str
 
 
-def _run_docling(pdf_bytes: bytes) -> List[PageData]:
+def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
@@ -60,6 +60,8 @@ def _run_docling(pdf_bytes: bytes) -> List[PageData]:
 
         pages: List[PageData] = []
         for page_no, page in sorted(doc.pages.items()):
+            if len(pages) >= max_pages:
+                break
             if page.image is None:
                 logger.warning("Page %d has no image, skipping.", page_no)
                 continue
@@ -149,10 +151,10 @@ def _extract_tables_markdown(page: Any) -> str:
             parts.append("\n".join(rows))
     return "\n\n".join(parts)
 
-async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
+async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_IMAGES) -> List[PageData]:
     logger.info("Routing PDF through Docling pipeline.")
     try:
-        pages = await asyncio.to_thread(_run_docling, pdf_bytes)
+        pages = await asyncio.to_thread(_run_docling, pdf_bytes, max_pages)
         if pages:
             return pages
         logger.error("Docling returned no pages, falling back to pdfplumber.")
@@ -161,7 +163,7 @@ async def extract_pages(pdf_bytes: bytes) -> List[PageData]:
 
     logger.info("Falling back to pdfplumber image extraction.")
     try:
-        return await asyncio.to_thread(_run_pdfplumber, pdf_bytes)
+        return await asyncio.to_thread(_run_pdfplumber, pdf_bytes, max_pages)
     except Exception as e:
         logger.error("pdfplumber also failed to process PDF: %s", e)
         return []
