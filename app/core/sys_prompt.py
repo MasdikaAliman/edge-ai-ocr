@@ -6,11 +6,11 @@
 
 _OUTPUT_VALIDATION = """
 OUTPUT VALIDATION:
-- Your ENTIRE response must be a raw JSON object and nothing else.
-- Do NOT wrap the output in markdown code fences (``` or ```json).
+- Avoid wrapping the output in markdown code fences (``` or ```json) — output pure JSON directly.
+- The response must start with { or [ and end with } or ] without extra markers.
 - Do NOT add any text, label, or explanation before or after the JSON.
 - Do NOT use trailing commas anywhere in the JSON.
-- If you cannot extract any fields from this page, return an empty object {}.
+- If no fields can be extracted or consolidated, return an empty object {}.
 - Every key must be a string. Every value must be a string, number, array, or null — never undefined.
 """
 
@@ -39,7 +39,7 @@ EXTRACTION RULES:
 - Keys: snake_case only (e.g. "Document Title" → "document_title").
 
 OUTPUT FORMAT:
-- Return a raw JSON object. No markdown. No code fences. No commentary.
+- Return a raw JSON object directly. Avoid markdown formatting, code fences (``` or ```json), or commentary.
 - Do NOT wrap output in "success", "data", "result", or any envelope object.
 - Do NOT add any text before or after the JSON.
 {_OUTPUT_VALIDATION}
@@ -117,7 +117,7 @@ Re-analyze the document carefully, focusing on tables and structured rows.
 IMPORTANT:
 - Extract ONLY the missing fields listed above.
 - Do NOT overwrite fields that were already correctly extracted.
-- Return ONLY a raw JSON object. No markdown, no commentary.
+- Return a raw JSON object directly (avoid markdown code fences or commentary).
 """
 
 
@@ -135,6 +135,6 @@ def get_aggregate_prompt(doc_type: str) -> str:
         "- For array fields (e.g. line items, members), MERGE arrays from all pages\n"
         "  and deduplicate identical rows.\n"
         "- If a field is empty (\"\") or null on ALL pages, output \"\" for that field.\n"
-        "- NEVER fabricate or infer values not present in any page result.\n"
-        "- Return ONLY a raw JSON object. No markdown, no commentary, no code fences."
+        "- NEVER fabricate or infer values not present in any page result.\n\n"
+        f"{_OUTPUT_VALIDATION}"
     )

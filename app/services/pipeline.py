@@ -168,10 +168,7 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
     ]
 
     try:
-        response = model.invoke(messages)
-        final_data = json.loads(clean_json_response(response.content))
-        if isinstance(final_data, list):
-            final_data = final_data[0] if final_data else {}
+        final_data = _invoke_model(messages)
         logger.info("Aggregation complete.")
     except Exception as e:
         logger.error("Error in aggregation node: %s", e)
