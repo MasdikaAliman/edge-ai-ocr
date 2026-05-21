@@ -6,10 +6,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
 from app.core.config import logger, MAX_DOC_PAGES, model
-from app.core.prompts import (
-    get_prompt_for_document,
+from app.core.doc_prompt import get_prompt_for_document
+from app.core.sys_prompt import (
     get_prompt_for_fields,
     get_prompt_for_custom,
+    get_reprocess_prompt,
+    get_aggregate_prompt,
 )
 from app.services.pdf import PageData
 from app.utils.errors import handle_llm_exception
@@ -99,17 +101,7 @@ def reprocess_page_node(state: OCRState) -> Dict[str, Any]:
         return {}
 
     doc_type = state["document_type"]
-    prompt = f"""You are reprocessing page {page_data['page_no']} of a {doc_type} document.
-
-The following fields were missing from the previous extraction:
-{missing}
-
-Re-analyze the document carefully, focusing on tables and structured rows.
-IMPORTANT:
-- Extract ONLY the missing fields listed above.
-- Do NOT overwrite fields that were already correctly extracted.
-- Return ONLY a raw JSON object. No markdown, no commentary.
-"""
+    prompt = get_reprocess_prompt(page_data['page_no'], doc_type, missing)
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     content.append(page_data["image"])
     for table_img in page_data.get("table_images", []):
@@ -168,22 +160,7 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
     if len(page_results) == 1:
         return {"final_result": page_results[0]}
 
-    system_prompt = (
-        f"You are an expert data arbitration engine for {doc_type} documents.\n"
-        "Multiple pages from the same document were OCR'd independently. "
-        "Produce ONE final JSON object.\n"
-        "RULES:\n"
-        "- For each field, choose the most complete and credible value across all pages.\n"
-        "- If the same field appears on multiple pages with DIFFERENT values, prefer:\n"
-        "    1. The value that is more complete (not empty/partial).\n"
-        "    2. The value from the page where that field would naturally appear\n"
-        "       (e.g. totals from the last page, header info from the first page).\n"
-        "- For array fields (e.g. line items, members), MERGE arrays from all pages\n"
-        "  and deduplicate identical rows.\n"
-        "- If a field is empty (\"\") or null on ALL pages, output \"\" for that field.\n"
-        "- NEVER fabricate or infer values not present in any page result.\n"
-        "- Return ONLY a raw JSON object. No markdown, no commentary, no code fences."
-    )
+    system_prompt = get_aggregate_prompt(doc_type)
 
     messages = [
         SystemMessage(content=system_prompt),

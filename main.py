@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 from pydantic import WithJsonSchema
 
 from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_DOC_PAGES, DocumentType, logger
-from app.core.prompts import DOCUMENT_PROMPTS, BASE_DIRECTIVES
+from app.core.doc_prompt import DOCUMENT_PROMPTS
+from app.core.sys_prompt import BASE_DIRECTIVES
 from app.services.pdf import PageData, extract_pages
 from app.services.pipeline import run_ocr
 from app.utils.call_log import create_call_log
