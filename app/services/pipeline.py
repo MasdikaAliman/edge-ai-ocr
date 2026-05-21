@@ -183,7 +183,11 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
     if len(page_results) == 1:
         return {"final_result": page_results[0]}
 
-    system_prompt = get_aggregate_prompt(doc_type)
+    system_prompt = get_aggregate_prompt(
+        doc_type,
+        fields=state.get("fields"),
+        custom_prompt=state.get("custom_prompt", ""),
+    )
 
     messages = [
         SystemMessage(content=system_prompt),

@@ -2,7 +2,17 @@
 #  OCR Document Template Prompts
 # ─────────────────────────────────────────────
 
-from app.core.sys_prompt import BASE_DIRECTIVES
+from app.core.sys_prompt import (
+    BASE_DIRECTIVES,
+    KTP_SCHEMA,
+    KK_SCHEMA,
+    NPWP_SCHEMA,
+    INVOICE_SCHEMA,
+    QUOTATION_SCHEMA,
+    SIM_SCHEMA,
+    IJAZAH_SCHEMA,
+)
+
 
 # ---------- Document-Specific Prompts ----------
 
@@ -12,19 +22,18 @@ Kartu Tanda Penduduk (KTP / National ID Card).
 {BASE_DIRECTIVES}
 
 EXPECTED FIELDS — extract ALL of the following for each image, in this exact key order:
-`province`, `city`, `nik`, `full_name`, `birth_place`, `birth_date`, `gender`,
-`blood_type`, `address`, `rt`, `rw`, `village`, `sub_district`, `religion`,
-`marital_status`, `occupation`, `nationality`, `valid_until`.
+`provinsi`, `kabupaten_kota`, `nik`, `nama`, `tempat_lahir`, `tanggal_lahir`, `jenis_kelamin`,
+`golongan_darah`, `alamat`, `rt`, `rw`, `kelurahan_desa`, `kecamatan`, `agama`,
+`status_perkawinan`, `pekerjaan`, `kewarganegaraan`, `berlaku_hingga`.
 
 RULES:
 - Every key above MUST appear in the output object, even if the value is "" or null.
-- `birth_date`: extract verbatim (e.g. "17-08-1945").
-- `valid_until`: use "SEUMUR HIDUP" if that phrase appears; otherwise extract the date verbatim.
+- `tanggal_lahir` any date use that format: extract verbatim (e.g. "17-08-1945").
+- `berlaku_hingga`: use "SEUMUR HIDUP" if that phrase appears; otherwise extract the date verbatim.
 
-OUTPUT EXAMPLE:
-{{"province": "...", "city": "...", "nik": "...", "full_name": "...", "birth_place": "...", "birth_date": "...", "gender": "...", "blood_type": "...", "address": "...", "rt": "...", "rw": "...", "village": "...", "sub_district": "...", "religion": "...", "marital_status": "...", "occupation": "...", "nationality": "...", "valid_until": "..."}}
+Extract all fields from this KTP image. Return a JSON object with this exact schema:
+{KTP_SCHEMA}
 """
-
 
 KK_PROMPT = f"""You are an expert OCR engine specialized in Indonesian \
 Kartu Keluarga (KK / Family Card).
@@ -34,23 +43,24 @@ Kartu Keluarga (KK / Family Card).
 EXPECTED FIELDS:
 
 TOP-LEVEL (flat):
-`kk_number`, `head_of_family`, `address`, `rt`, `rw`, `village`,
-`sub_district`, `city`, `province`, `postal_code`.
+`nomor_kk`, `nama_kepala_keluarga`, `alamat`, `rt`, `rw`, `desa_kelurahan`,
+`kecamatan`, `kabupaten_kota`, `provinsi`, `kode_pos`.
 
-MEMBERS TABLE — key: `members` (array of objects).
+MEMBERS TABLE — key: `anggota_keluarga` (array of objects).
 Each member object MUST contain ALL of these keys, even if the value is "":
-`full_name`, `nik`, `gender`, `birth_place`, `birth_date`, `religion`,
-`education`, `occupation`, `marital_status`, `relation_to_head`,
-`father_name`, `mother_name`.
+`nama_lengkap`, `nik`, `jenis_kelamin`, `tempat_lahir`, `tanggal_lahir`, `agama`,
+`pendidikan`, `jenis_pekerjaan`, `status_perkawinan`, `status_hubungan_keluarga`,
+`nama_ayah`, `nama_ibu`.
 
 ROW INTEGRITY RULES:
-- Every row in the members table = one object in the `members` array.
+- Every row in the members table = one object in the `anggota_keluarga` array.
 - Do NOT skip a row, even if it is mostly blank.
 - If a cell is blank or unreadable, set that field to "".
 - Every member object must have exactly the keys listed above — no more, no fewer.
 - Maintain original top-to-bottom row order.
-"""
 
+{KK_SCHEMA}
+"""
 
 NPWP_PROMPT = f"""You are an expert OCR engine specialized in Indonesian \
 Nomor Pokok Wajib Pajak (NPWP / Tax ID).
@@ -58,36 +68,23 @@ Nomor Pokok Wajib Pajak (NPWP / Tax ID).
 {BASE_DIRECTIVES}
 
 EXPECTED FIELDS (flat):
-`npwp_number`, `full_name`, `address`, `registration_date`, `kpp_office`.
+`nomor_npwp`, `nama`, `alamat`, `tanggal_terdaftar`, `kantor_kpp`.
 
 RULES:
 - Every key above MUST appear in the output object, even if the value is "" or null.
-"""
+- Normalize dates to format: DD-MM-YYYY.
+- nomor_npwp: exactly 15 digits as string, typically shown as XX.XXX.XXX.X-XXX.XXX — store digits only, no dots or dashes.
 
+Extract all fields from this NPWP (Nomor Pokok Wajib Pajak) card image. Return a JSON object with this exact schema:
+{NPWP_SCHEMA}
+"""
 
 INVOICE_PROMPT = f"""You are an expert OCR engine specialized in Invoice / Receipt documents.
 
 {BASE_DIRECTIVES}
 
 OUTPUT SCHEMA — the output object must follow exactly this structure, no extra keys:
-{{
-  "invoice_number": "",
-  "invoice_date": "",
-  "due_date": "",
-  "purchase_order": "",
-  "currency": "",
-  "total_amount": "",
-  "sales_order": "",
-  "remark": "",
-  "items": [
-    {{
-      "qty": "",
-      "description": "",
-      "unit_price": "",
-      "amount": ""
-    }}
-  ]
-}}
+{INVOICE_SCHEMA}
 
 ═══ HEADER FIELDS ═══
 
@@ -137,30 +134,7 @@ meaningful portion and discard the rest.
 DISCARD: "Thank you for your business", payment instructions, bank details,
 terms & conditions, any system-generated template text.
 Set "" if no valid remark exists.
-
-═══ LINE ITEMS TABLE ═══
-STEP 1 — Locate the table with column headers such as:
-  QTY / Qty / Quantity | Description / Item / Details / Product
-  Unit Price / Price / Rate | Amount / Total / Line Total
-
-STEP 2 — Parse rows:
-- Each data row = one item object.
-- Preserve original top-to-bottom order.
-- Do NOT include summary rows: Subtotal, Tax, VAT, Discount, Grand Total.
-
-STEP 3 — Field mapping per row:
-  qty         → value from QTY/Quantity column
-  description → full cell text; join multi-line with a single space
-  unit_price  → per-unit price (no currency symbol)
-  amount      → row total / extended price (no currency symbol)
-
-STEP 4 — Missing columns:
-- If a column is entirely absent from the document, set its field to "" in every row.
-- Never omit a field key from any item object.
-- If table is undetectable → "items": []
-- NEVER calculate, validate, or cross-check numeric values.
 """
-
 
 QUOTATION_PROMPT = f"""You are an expert OCR engine specialized in Quotation / Price Quote documents.
 
@@ -176,29 +150,7 @@ VISUAL EXTRACTION HINTS:
 - Preserve codes exactly as printed: `plant` = "TG 4318 PL01", `lead_time` = "7 days".
 
 OUTPUT SCHEMA — the output object must follow exactly this structure:
-{{
-  "quotation_number": "",
-  "quotation_date": "",
-  "sales_agent": "",
-  "no_telp": "",
-  "currency": "",
-  "purchasing_group": "",
-  "plant": "",
-  "lead_time": "",
-  "submitted_by": "",
-  "material_items": [
-    {{
-      "item_number": "",
-      "material_code": "",
-      "material_description": "",
-      "quantity": "",
-      "unit": "",
-      "unit_price": "",
-      "amount": "",
-      "UoM": ""
-    }}
-  ]
-}}
+{QUOTATION_SCHEMA}
 
 ═══ HEADER FIELDS ═══
 quotation_number : from document header only.
@@ -233,9 +185,8 @@ MISSING COLUMN RULE:
 - NEVER calculate or validate any numeric value.
 """
 
+SIM_PROMPT = f"""You are an Indonesian driving license (SIM) OCR specialist. Extract structured data from SIM images accurately.
 
-SIM_PROMPT = f"""
-You are an Indonesian driving license (SIM) OCR specialist. Extract structured data from SIM images accurately.
 {BASE_DIRECTIVES}
 
 Rules:
@@ -246,25 +197,11 @@ Rules:
 - nomor_sim is typically 12 digits (string).
 
 Extract all fields from this SIM (Surat Izin Mengemudi) image. Return a JSON object with this exact schema:
-
-{{
-  "nomor_sim": "string (12 digits)",
-  "golongan_sim": "A | A Umum | B1 | B1 Umum | B2 | B2 Umum | C | C1 | D | D1",
-  "nama": "string",
-  "tempat_lahir": "string",
-  "tanggal_lahir": "DD-MM-YYYY",
-  "jenis_kelamin": "LAKI-LAKI | PEREMPUAN",
-  "golongan_darah": "A | B | AB | O | null",
-  "alamat": "string",
-  "pekerjaan": "string | null",
-  "berlaku_hingga": "DD-MM-YYYY",
-  "instansi_penerbit": "string | null",
-}}
+{SIM_SCHEMA}
 """
 
+IJAZAH_PROMPT = f"""You are an expert OCR engine specialized in extracting structured data from Indonesian academic certificates (Ijazah).
 
-IJAZAH_PROMPT = f"""
-You are an expert OCR engine specialized in extracting structured data from Indonesian academic certificates (Ijazah).
 {BASE_DIRECTIVES}
 
 STEP 1 — LAYOUT SCAN
@@ -365,32 +302,8 @@ Return ONLY the JSON object. No explanation, no markdown fences, no preamble.
 Use null for fields that are genuinely absent or not applicable for this document level.
 Fields marked as level-specific must be null if the document is a different level.
 
-{{
-  "document_level": "SMA | SMK | MA | D3 | D4 | S1 | S2 | S3",
-
-  "institution_name": "string",
-  "nomor_ijazah": "string | null",
-
-  "nama_lengkap": "string",
-  "tempat_lahir": "string",
-  "tanggal_lahir": "DD/MM/YYYY",
-
-  "nisn": "string | null",
-  "nis": "string | null",
-  "nim": "string | null",
-
-  "jurusan_sma": "string | null",
-  "kompetensi_keahlian": "string | null",
-  "program_studi": "string | null",
-  "fakultas": "string | null",
-
-  "tahun_lulus": "string",
-  "tanggal_lulus": "DD/MM/YYYY | null",
-  "tanggal_ijazah": "DD/MM/YYYY | null",
-}}
-
+{IJAZAH_SCHEMA}
 """
-
 
 # ---------- Lookup Dictionaries ----------
 
