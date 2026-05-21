@@ -1,5 +1,6 @@
 import requests
 from typing import Annotated, List, Optional
+import re
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile as UF
 from fastapi.middleware.cors import CORSMiddleware
@@ -166,10 +167,19 @@ async def process_ocr_fields(
     ),
     fields: List[str] = Form(
         [],
-        description="List of snake_case field names to extract. Add each as a separate 'fields' parameter.",
+        description="List of field names to extract. They will be converted to snake_case internally.",
     ),
 ):
-    parsed_fields = [f for f in fields if f and f.strip()] or None
+    # Helper to convert strings to snake_case
+    def _to_snake_case(value: str) -> str:
+        # Replace non-alphanumeric characters with underscore, collapse multiple underscores, strip leading/trailing underscores
+        s = re.sub(r"[^0-9a-zA-Z]+", "_", value)
+        s = re.sub(r"_+", "_", s)
+        return s.strip("_").lower()
+
+    # Normalize the fields to snake_case
+    normalized_fields = [_to_snake_case(f) for f in fields if f and f.strip()]
+    parsed_fields = normalized_fields or None
     image_pages = await _process_files(files)
     result = await run_ocr("Fields", image_pages, parsed_fields, "")
     create_call_log(

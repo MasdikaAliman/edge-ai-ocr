@@ -40,12 +40,23 @@ def _build_user_message(page_data: PageData, doc_type: str, custom_prompt: str) 
     return "\n".join(parts)
 
 
-def _invoke_model(messages: list) -> dict:
+def _invoke_model(messages: list) -> tuple[dict, str]:
+    """Invoke the model and return (parsed_dict, raw_content)."""
     response = model.invoke(messages)
-    parsed = json.loads(clean_json_response(response.content))
+    raw_content = response.content
+    cleaned_content = clean_json_response(raw_content)
+    logger.debug("Cleaned JSON content before parsing: %s", cleaned_content)
+    logger.debug("Raw JSON content before parsing: %s", raw_content)
+
+    try:
+        parsed = json.loads(cleaned_content)
+    except Exception as e:
+        logger.error("JSON parsing failed in _invoke_model. Raw content: %s", raw_content)
+        raise e
+
     if isinstance(parsed, list):
-        return parsed[0] if parsed else {}
-    return parsed
+        return (parsed[0] if parsed else {}), raw_content
+    return parsed, raw_content
 
 
 def process_page_node(state: OCRState) -> Dict[str, Any]:
@@ -71,8 +82,9 @@ def process_page_node(state: OCRState) -> Dict[str, Any]:
 
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=content)]
 
+    raw_response = ""
     try:
-        extracted_data = _invoke_model(messages)
+        extracted_data, raw_response = _invoke_model(messages)
         logger.info("Page %d extracted successfully.", page_data["page_no"])
     except Exception as e:
         logger.error("Error extracting page %d: %s", page_data["page_no"], e)
@@ -82,7 +94,12 @@ def process_page_node(state: OCRState) -> Dict[str, Any]:
         "page_results": state.get("page_results", []) + [extracted_data],
         "current_idx": idx + 1,
         "messages_log": state.get("messages_log", []) + [
-            {"page_no": page_data["page_no"], "messages": messages, "response": extracted_data}
+            {
+                "page_no": page_data["page_no"],
+                "messages": messages,
+                "response": extracted_data,
+                "raw_response": raw_response,
+            }
         ],
     }
 
@@ -112,22 +129,28 @@ def reprocess_page_node(state: OCRState) -> Dict[str, Any]:
         HumanMessage(content=content),
     ]
 
+    raw_response = ""
     try:
-        new_data = _invoke_model(messages)
+        new_data, raw_response = _invoke_model(messages)
         logger.info("Reprocess page %d found additional data.", page_data["page_no"])
     except Exception:
         new_data = {}
 
     merged = {**last_result, **new_data}
     update = {"page_results": state["page_results"][:-1] + [merged]}
-    update.update(_log_reprocess(state, new_data))
+    update.update(_log_reprocess(state, new_data, raw_response))
     return update
 
 
-def _log_reprocess(state: OCRState, new_data: dict) -> Dict[str, Any]:
+def _log_reprocess(state: OCRState, new_data: dict, raw_response: str = "") -> Dict[str, Any]:
     return {
         "messages_log": state.get("messages_log", []) + [
-            {"page_no": state["current_idx"] - 1, "reprocess": True, "response": new_data}
+            {
+                "page_no": state["current_idx"] - 1,
+                "reprocess": True,
+                "response": new_data,
+                "raw_response": raw_response,
+            }
         ],
     }
 
@@ -167,14 +190,20 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
         HumanMessage(content=json.dumps(page_results, indent=2)),
     ]
 
+    raw_response = ""
     try:
-        final_data = _invoke_model(messages)
+        final_data, raw_response = _invoke_model(messages)
         logger.info("Aggregation complete.")
     except Exception as e:
         logger.error("Error in aggregation node: %s", e)
         final_data = {"error": f"Aggregation failed: {str(e)}", "partial_results": page_results}
 
-    return {"final_result": final_data, "messages_log": state.get("messages_log", []) + [{"aggregate": True}]}
+    return {
+        "final_result": final_data,
+        "messages_log": state.get("messages_log", []) + [
+            {"aggregate": True, "raw_response": raw_response}
+        ],
+    }
 
 
 def _build_graph():
