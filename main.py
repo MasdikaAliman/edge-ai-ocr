@@ -177,8 +177,14 @@ async def process_ocr_fields(
         s = re.sub(r"_+", "_", s)
         return s.strip("_").lower()
 
-    # Normalize the fields to snake_case
-    normalized_fields = [_to_snake_case(f) for f in fields if f and f.strip()]
+    # Split each entry by comma (supports both comma-separated and repeated form fields), then normalize to snake_case
+    raw = []
+    for f in fields:
+        for part in f.split(","):
+            part = part.strip()
+            if part:
+                raw.append(part)
+    normalized_fields = [_to_snake_case(f) for f in raw]
     parsed_fields = normalized_fields or None
     image_pages = await _process_files(files)
     result = await run_ocr("Fields", image_pages, parsed_fields, "")
