@@ -1,13 +1,16 @@
 import re
 
-
 def clean_json_response(content: str) -> str:
     if not content:
         return ""
 
     content = content.strip()
 
-    # 1. Try to extract from ```json ... ``` or ``` ... ``` using rfind to keep internal backticks
+    # 1. Strip thinking block
+    if "</thinking>" in content:
+        content = content.split("</thinking>")[-1].strip()
+
+    # 2. Strip markdown fences
     if "```json" in content:
         start_idx = content.find("```json") + 7
         end_idx = content.rfind("```")
@@ -19,7 +22,7 @@ def clean_json_response(content: str) -> str:
         if end_idx > start_idx:
             content = content[start_idx:end_idx].strip()
 
-    # 2. Locate the outermost brace or bracket
+    # 3. Find FIRST { or [ (outermost), and LAST } or ] (outermost closing)
     first_dict = content.find("{")
     first_list = content.find("[")
 
@@ -42,12 +45,19 @@ def clean_json_response(content: str) -> str:
     if start_idx != -1:
         end_idx = content.rfind(end_char)
         if end_idx != -1 and end_idx > start_idx:
-            content = content[start_idx : end_idx + 1]
+            content = content[start_idx:end_idx + 1]
 
-    # 3. Clean trailing commas
+    # 4. Clean trailing commas
     content = re.sub(r",(\s*[}\]])", r"\1", content)
-    return content
 
+    # 5. Safety net — if still not starting with { or [
+    content = content.strip()
+    if content and content[0] not in ('{', '['):
+        match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", content)
+        if match:
+            return match.group(1).strip()
+
+    return content.strip()
 
 def clean_markdown_response(content: str) -> str:
     if "```markdown" in content:

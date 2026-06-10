@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from typing import Any, Dict, List, Optional, TypedDict
 
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from langgraph.graph import StateGraph, START, END
 from app.core.config import logger, MAX_DOC_PAGES, model
 from app.core.doc_prompt import get_prompt_for_document
 from app.core.sys_prompt import (
+    _LAST_VALUE_FIELDS,
     get_prompt_for_fields,
     get_prompt_for_custom,
     get_reprocess_prompt,
@@ -29,14 +31,29 @@ class OCRState(TypedDict):
     final_result: Dict[str, Any]
     messages_log: List[Dict[str, Any]]
 
-
 def _build_user_message(page_data: PageData, doc_type: str, custom_prompt: str) -> str:
     parts = [f"This is page {page_data['page_no']} of a {doc_type} document."]
+    
+    # Inject color hints if available
+    colored_texts = page_data.get("colored_texts", [])
+    if colored_texts:
+        parts.append("\n\nCOLOR TEXT MAPPING (from PDF source, use as ground truth):")
+        for i, item in enumerate(colored_texts, 1):
+            parts.append(f"  {i}. [{item['color']}] \"{item['text']}\"")
+        parts.append(
+            "\nIMPORTANT: These colored texts were extracted programmatically from the PDF. "
+            "They are 100% accurate. When filling fields that require colored text "
+            "(e.g. material_code), use ONLY these values. "
+            "Do NOT attempt to detect colors from the image yourself."
+        )
+    
     if doc_type == "Custom" and custom_prompt:
         parts.append(f"\n\nInstructions:\n{custom_prompt}")
+    
     markdown = page_data.get("markdown", "")
     if markdown:
         parts.append(f"\n\n### Page {page_data['page_no']} Text/Markdown:\n{markdown}")
+    
     return "\n".join(parts)
 
 
@@ -174,6 +191,173 @@ def _after_reprocess(state: OCRState) -> str:
     return "aggregate_results"
 
 
+# ---------- Aggregation Helpers ----------
+
+def build_field_tallies(page_results: list[dict]) -> str:
+    """Pre-compute tallies for every field across pages.
+
+    Returns a human-readable, structured string that the LLM can consume
+    without needing to count occurrences itself.
+    """
+    # Collect all keys in order of first appearance
+    all_keys: list[str] = []
+    for r in page_results:
+        for k in r:
+            if k not in all_keys:
+                all_keys.append(k)
+
+    lines: list[str] = []
+
+    for key in all_keys:
+        # --- Array fields ---
+        if any(isinstance(r.get(key), list) for r in page_results):
+            # Merge arrays from all pages
+            merged: list[dict] = []
+            for i, r in enumerate(page_results):
+                arr = r.get(key)
+                if isinstance(arr, list):
+                    for item in arr:
+                        merged.append(item)
+            lines.append(f"FIELD: {key} (ARRAY — {len(merged)} rows merged from {len(page_results)} pages)")
+            lines.append(f"  MERGED DATA: {json.dumps(merged, ensure_ascii=False)}")
+            lines.append("  NOTE: May contain duplicates — deduplicate by strongest identifier or semantic similarity.")
+            lines.append("")
+            continue
+
+        # --- Scalar fields ---
+        # Gather (page_index, value) for non-null entries
+        values: list[tuple[int, Any]] = []
+        null_pages: list[int] = []
+        for i, r in enumerate(page_results):
+            v = r.get(key)
+            if v is not None and v != "":
+                values.append((i + 1, v))  # 1-indexed page numbers
+            else:
+                null_pages.append(i + 1)
+
+        # All null
+        if not values:
+            lines.append(f"FIELD: {key} (ALL NULL)")
+            lines.append(f"  All {len(page_results)} pages returned null/empty.")
+            lines.append("  RECOMMENDED: null")
+            lines.append("")
+            continue
+
+        # Numeric / last-page fields
+        if key.lower() in _LAST_VALUE_FIELDS:
+            last_page, last_val = values[-1]
+            lines.append(f"FIELD: {key} (NUMERIC — LAST PAGE RULE)")
+            for pg, v in values:
+                lines.append(f'  "{v}" → page {pg}')
+            lines.append(f'  RECOMMENDED: "{last_val}" (last page with value = page {last_page})')
+            lines.append("")
+            continue
+
+        # Count occurrences for majority vote
+        counts: Counter = Counter(v for _, v in values)
+        sorted_counts = counts.most_common()
+        max_count = sorted_counts[0][1]
+
+        # Single unique value or clear majority
+        if len(sorted_counts) == 1 or sorted_counts[0][1] > sorted_counts[1][1]:
+            winner = sorted_counts[0][0]
+            tag = "MAJORITY" if max_count > 1 else "SINGLE VALUE"
+            lines.append(f"FIELD: {key} (SCALAR — {tag})")
+            for val, cnt in sorted_counts:
+                pages = [pg for pg, v in values if v == val]
+                marker = " ← MAJORITY" if val == winner and max_count > 1 else ""
+                lines.append(f'  "{val}" → {cnt} page(s) {pages}{marker}')
+            if null_pages:
+                lines.append(f"  null/empty pages: {null_pages} (ignored)")
+            lines.append(f'  RECOMMENDED: "{winner}"')
+            lines.append("")
+        else:
+            # Tie — multiple values with same count
+            # Recommend earliest page value as tiebreak
+            earliest_winner = None
+            for pg, v in values:
+                if counts[v] == max_count:
+                    earliest_winner = v
+                    break
+            lines.append(f"FIELD: {key} (SCALAR — TIE)")
+            for val, cnt in sorted_counts:
+                pages = [pg for pg, v in values if v == val]
+                lines.append(f'  "{val}" → {cnt} page(s) {pages}')
+            if null_pages:
+                lines.append(f"  null/empty pages: {null_pages} (ignored)")
+            lines.append(f'  RECOMMENDED: "{earliest_winner}" (earliest page tiebreak)')
+            lines.append("  NOTE: Tie detected — you may override if semantic context suggests a better choice.")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def aggregate_programmatic(page_results: list[dict], doc_type: str) -> dict:
+    """Deterministic merge used as fallback when LLM aggregation fails."""
+    if len(page_results) == 1:
+        return page_results[0]
+
+    all_keys: list[str] = []
+    for r in page_results:
+        for k in r:
+            if k not in all_keys:
+                all_keys.append(k)
+
+    result: dict = {}
+    array_keys: list[str] = []
+
+    for key in all_keys:
+        if any(isinstance(r.get(key), list) for r in page_results):
+            array_keys.append(key)
+            continue
+
+        values: list[tuple[int, Any]] = []
+        for i, r in enumerate(page_results):
+            v = r.get(key)
+            if v is not None and v != "":
+                values.append((i, v))
+
+        if not values:
+            result[key] = None
+            continue
+
+        if key.lower() in _LAST_VALUE_FIELDS:
+            result[key] = values[-1][1]
+            continue
+
+        counts: Counter = Counter(v for _, v in values)
+        max_count = counts.most_common(1)[0][1]
+        for page_idx, v in values:
+            if counts[v] == max_count:
+                result[key] = v
+                break
+
+    for key in array_keys:
+        merged: list[dict] = []
+        seen_ids: set = set()
+        id_keys = ("nik", "item_number", "material_code", "nomor_sim")
+        for r in page_results:
+            arr = r.get(key)
+            if not isinstance(arr, list):
+                continue
+            for item in arr:
+                item_id = None
+                for ik in id_keys:
+                    if item.get(ik):
+                        item_id = item[ik]
+                        break
+                if item_id is None:
+                    item_id = json.dumps(item, sort_keys=True)
+                if item_id not in seen_ids:
+                    seen_ids.add(item_id)
+                    merged.append(item)
+        result[key] = merged
+
+    return result
+
+
+# ---------- Aggregate Node ----------
+
 def aggregate_node(state: OCRState) -> Dict[str, Any]:
     page_results = state.get("page_results", [])
     doc_type = state["document_type"]
@@ -183,29 +367,41 @@ def aggregate_node(state: OCRState) -> Dict[str, Any]:
     if len(page_results) == 1:
         return {"final_result": page_results[0]}
 
+    # --- Step 1: Python pre-computes tallies ---
+    tallies = build_field_tallies(page_results)
+    logger.info("Built field tallies for %s (%d pages).", doc_type, len(page_results))
+    logger.debug("Tallies:\n%s", tallies)
+
+    # --- Step 2: LLM receives tallies and decides ---
     system_prompt = get_aggregate_prompt(
         doc_type,
         fields=state.get("fields"),
         custom_prompt=state.get("custom_prompt", ""),
     )
-
     messages = [
         SystemMessage(content=system_prompt),
-        HumanMessage(content=json.dumps(page_results, indent=2)),
+        HumanMessage(content=tallies),
     ]
 
     raw_response = ""
     try:
         final_data, raw_response = _invoke_model(messages)
-        logger.info("Aggregation complete.")
+        logger.info("Unified aggregation (tally+LLM) complete.")
     except Exception as e:
-        logger.error("Error in aggregation node: %s", e)
-        final_data = {"error": f"Aggregation failed: {str(e)}", "partial_results": page_results}
+        # Fallback to programmatic aggregation if LLM fails
+        logger.error("LLM aggregation failed (%s), falling back to programmatic.", e)
+        final_data = aggregate_programmatic(page_results, doc_type)
+        return {
+            "final_result": final_data,
+            "messages_log": state.get("messages_log", []) + [
+                {"aggregate": True, "method": "programmatic_fallback", "error": str(e)}
+            ],
+        }
 
     return {
         "final_result": final_data,
         "messages_log": state.get("messages_log", []) + [
-            {"aggregate": True, "raw_response": raw_response}
+            {"aggregate": True, "method": "tally_llm", "raw_response": raw_response}
         ],
     }
 

@@ -178,7 +178,7 @@ Field rules per row:
   unit_price           → raw value from unit price column; NEVER calculate; "" if absent.
   amount               → raw value from amount/total column (e.g. "1,500,000.00"); "" if absent.
   UoM                  → unit of measure (e.g. "EA", "KG"); "" if absent.
-
+total_amount         → total amount of the quotation
 MISSING COLUMN RULE:
 - If a column does not exist in the document, set its field to "" in every row.
 - NEVER omit a key from any item object.

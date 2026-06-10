@@ -13,13 +13,70 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructur
 from docling.datamodel.accelerator_options import AcceleratorOptions, AcceleratorDevice
 from docling.datamodel.base_models import InputFormat
 import pdfplumber
+import fitz
 
 class PageData(TypedDict):
     page_no: int
     image: Dict[str, Any]
     table_images: List[Dict[str, Any]]
     figure_images: List[Dict[str, Any]]
+    colored_texts: list[dict]
     markdown: str
+
+def _classify_color(r: int, g: int, b: int) -> str | None:
+    """Classify an RGB value into a named color category.
+    
+    Returns None for black/near-black/white/gray text (i.e. "default" text).
+    """
+    # Skip black / near-black / white / gray
+    if r < 40 and g < 40 and b < 40:
+        return None
+    if r > 220 and g > 220 and b > 220:
+        return None
+    # Gray — all channels close together and not vivid
+    if max(r, g, b) - min(r, g, b) < 40:
+        return None
+
+    # Red family (includes dark red, maroon, crimson)
+    if r > 120 and r > g * 1.5 and r > b * 1.5:
+        return "RED"
+    # Blue family (includes navy, royal blue, dark blue)
+    if b > 80 and b > r * 1.3 and b > g * 1.2:
+        return "BLUE"
+    # Green family
+    if g > 100 and g > r * 1.3 and g > b * 1.3:
+        return "GREEN"
+    # Orange / amber
+    if r > 180 and 80 < g < 180 and b < 80:
+        return "ORANGE"
+    # Any other clearly non-neutral color
+    if max(r, g, b) - min(r, g, b) > 60:
+        return "COLORED"
+    return None
+
+
+def extract_colored_text(fitz_page: fitz.Page) -> list[dict]:
+    """Extract non-black, non-white colored text spans from a PDF page."""
+    colored = []
+    for block in fitz_page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text = span.get("text", "").strip()
+                if not text:
+                    continue
+                color = span.get("color", 0)
+                r = (color >> 16) & 0xFF
+                g = (color >> 8) & 0xFF
+                b = color & 0xFF
+
+                label = _classify_color(r, g, b)
+                if label:
+                    colored.append({
+                        "text": text,
+                        "color": label,
+                        "rgb": f"({r},{g},{b})",
+                    })
+    return colored
 
 
 def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
@@ -59,6 +116,8 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageD
                 for p in item.prov:
                     text_by_page.setdefault(p.page_no, []).append(item.text)
 
+        fitz_doc = fitz.open(tmp_path)
+
         pages: List[PageData] = []
         for page_no, page in sorted(doc.pages.items()):
             if len(pages) >= max_pages:
@@ -85,14 +144,22 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageD
                 except Exception as e:
                     logger.error("Could not extract figure image on page %d: %s", page_no, e)
 
+            colored_texts = []
+            try:
+                fitz_page = fitz_doc[page_no - 1]
+                colored_texts = extract_colored_text(fitz_page)
+            except Exception as e:
+                logger.warning("Could not extract colored text on page %d: %s", page_no, e)
+
             pages.append(PageData(
                 page_no=page_no,
                 image=pil_to_content_item(page.image.pil_image),
                 table_images=table_image_items,
                 figure_images=figure_image_items,
+                colored_texts = colored_texts,
                 markdown="\n".join(text_by_page.get(page_no, [])),
             ))
-
+        fitz_doc.close()
         logger.info("Docling extracted %d pages from PDF.", len(pages))
         return pages
     finally:
@@ -101,6 +168,7 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageD
 
 def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
     pages: List[PageData] = []
+    fitz_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for i, page in enumerate(pdf.pages):
             if i >= max_pages:
@@ -114,13 +182,22 @@ def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[Pa
             if table_md:
                 markdown += "\n\n" + table_md
 
+            colored_texts = []
+            try:
+                fitz_page = fitz_doc[i]
+                colored_texts = extract_colored_text(fitz_page)
+            except Exception as e:
+                logger.warning("Could not extract colored text on page %d: %s", i + 1, e)
+
             pages.append(PageData(
                 page_no=i + 1,
                 image=pil_to_content_item(im),
                 table_images=[],
                 figure_images=[],
+                colored_texts = colored_texts,
                 markdown=markdown,
             ))
+    fitz_doc.close()
     return pages
 
 def _extract_tables_markdown(page: Any) -> str:

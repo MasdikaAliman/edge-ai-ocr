@@ -2,6 +2,13 @@
 #  OCR System Prompt Definitions
 # ─────────────────────────────────────────────
 
+_LAST_VALUE_FIELDS = {
+    "total_amount", "grand_total", "amount_due", 
+    "total_due", "total_payable", "subtotal", "sub_total",
+    "tax", "vat", "discount", "shipping",
+}
+
+
 # ---------- Shared Rule Blocks ----------
 
 _OUTPUT_VALIDATION = """
@@ -20,6 +27,13 @@ CURRENCY EXTRACTION:
 - If written as a code (USD, IDR, EUR), extract the code.
 - Do NOT embed the currency symbol or code inside any numeric field value.
 - If no currency found, set `currency` to "".
+"""
+
+NUMERIC_RULE = """
+NUMERIC FIELDS RULE:
+- Always return numeric values as strings, never as bare numbers.
+- Preserve the original formatting from the source (e.g. '1,500,000.00' not 1500000).
+- Never reformat or recalculate any numeric value.
 """
 
 _DATE_RULE = """
@@ -44,7 +58,9 @@ OUTPUT FORMAT:
 - Do NOT add any text before or after the JSON.
 {_OUTPUT_VALIDATION}
 {_CURRENCY_RULE}
-{_DATE_RULE}"""
+{_DATE_RULE}
+{NUMERIC_RULE}
+"""
 
 CUSTOM_BASE_PROMPT = """You are a flexible document extraction assistant. \
 Your primary directive is to follow the user's custom prompt below.
@@ -216,6 +232,7 @@ QUOTATION_SCHEMA = """{
   "plant": "",
   "lead_time": "",
   "submitted_by": "",
+  "total_amount": "",
   "material_items": [
     {
       "item_number": "",
@@ -299,13 +316,42 @@ CONFLICT RESOLUTION:
 - Prefer header info (`invoice_number`, `invoice_date`, `purchase_order`) from the first page's extraction.
 - Prefer `total_amount` from the last page's extraction.
 """,
-    "Quotation": f"""
+   "Quotation": f"""
 EXPECTED SCHEMA:
 {QUOTATION_SCHEMA}
+
 CONFLICT RESOLUTION & DEDUPLICATION:
 - Merge all items from `material_items` across all pages.
-- Deduplicate items based on `item_number` and `material_code`. If the same item number/code appears across multiple pages with the exact same price and qty, keep only one.
-- If they have different details (like a continuation row or correction), keep both or merge them if it represents a single multi-page row.
+- Deduplicate items based on `material_code` first, then `item_number`.
+
+PRICE TIER DETECTION:
+- If multiple rows share the SAME `item_number` AND same `material_description`
+  but have DIFFERENT `quantity` and `unit_price` values — these are PRICE TIERS,
+  not separate items.
+- Price tiers must be collapsed into a single item object using a `price_tiers` array:
+  {{
+    "item_number": "1",
+    "material_code": "SNP001",
+    "material_description": "...",
+    "price_tiers": [
+      {{"quantity": "1,000 Pieces", "unit_price": "USD 0.2740/pc", "amount": "USD 274.00"}},
+      {{"quantity": "5,000 Pieces", "unit_price": "USD 0.0659/pc", "amount": "USD 329.50"}}
+    ],
+    "unit": "",
+    "UoM": ""
+  }}
+- If a page has items with `item_number` "1", "2", "3"... these are DISTINCT items, not tiers.
+- If a page has items ALL with the same `item_number` "1." but different quantities — these are PRICE TIERS.
+
+MATCHING PRICE TIERS TO ITEMS:
+- Match price tiers to their correct item using `material_description` similarity.
+- If page 1 has price tiers for "INNER BOX [MODEL PB:SR]" and page 2 has items
+  with `material_description` containing "INNER BOX" — attach the tiers to those items.
+- If no match found, keep tiers as a standalone item with `price_tiers` array.
+
+ROW ORDER:
+- Final array order: item_number ascending (1, 2, 3...).
+- Price tiers within an item: quantity ascending.
 """,
     "SIM": f"""
 EXPECTED SCHEMA:
@@ -323,6 +369,12 @@ def get_aggregate_prompt(
     fields: list | None = None,
     custom_prompt: str = "",
 ) -> str:
+    """Build aggregation prompt that works with pre-computed tallies.
+
+    Python pre-computes field tallies (counts, majority, ties) and passes
+    them as structured text. The LLM only needs to confirm recommendations
+    or override when semantic context suggests a better choice.
+    """
     doc_rules = _AGGREGATE_DOC_RULES.get(doc_type, "")
 
     # Build dynamic rules for user-driven modes
@@ -334,46 +386,45 @@ def get_aggregate_prompt(
             "FIELD RULES:\n"
             "- The final output MUST contain ONLY the fields listed above — no extra keys.\n"
             "- JSON keys MUST exactly match the field names listed above.\n"
-            "- For each field, pick the most complete value across all pages.\n"
-            "- If a field is not found on any page, set its value to null.\n"
-            "- The output must be a single flat JSON object.\n"
-        )
-    elif doc_type == "Custom" and custom_prompt:
-        doc_rules = (
-            "ORIGINAL USER PROMPT (for context on expected output structure):\n"
-            f"```\n{custom_prompt}\n```\n\n"
-            "CUSTOM AGGREGATION & RECONCILIATION RULES:\n"
-              "1. FORMAT PRESERVATION: Strictly preserve the exact output structure, schema, and format (e.g., JSON, CSV, text) requested in the ORIGINAL USER PROMPT above.\n"
-              "2. FIELD RESOLUTION (Conflict Handling): If the same field appears on multiple pages with DIFFERENT values, choose the single most reliable and complete value. Prioritize in this order:\n"
-              "   a) Any non-empty, non-null value over `null`, `\"\"`, or `\"N/A\"`. Under no circumstances should a valid value found on one page be overridden by an empty/null value from other pages (DO NOT use majority voting/frequency count to select empty values).\n"
-              "   b) The value without obvious OCR artifacts (e.g., prefer '100' over 'l00' or 'IOO'; prefer 'INV-502' over '1NV-502').\n"
-              "   c) The value that is most complete and detailed (e.g., prefer 'PT Indonesia Sejahtera' over 'PT Indonesia' or 'Indonesia Sejahtera').\n"
-              "   d) The value from the page where that field structurally belongs (e.g., header info on the first page, totals on the last page).\n"
-              "3. ARRAY/TABLE MERGING (Fuzzy Deduplication): For list or array fields across pages, MERGE them sequentially. Overlapping pages often cause the same row to be scanned twice with slight variations. Identify these duplicates logically based on primary identifiers (like ID, Name, or Item Code) rather than looking for identical strings, and merge them into a single clean row.\n"
-              "4. MISSING VALUES: If a field is missing, unreadable, or empty across ALL pages, output the standard 'empty' representation appropriate for the requested format (e.g., `null`, `\"\"`, or left blank). Do not fabricate or hallucinate data.\n"
         )
 
     prompt = (
-        f"You are an expert data arbitration engine for {doc_type} documents.\n"
-        "Multiple pages from the same document were OCR'd independently. "
-        "Produce ONE final JSON object.\n"
-        "RULES:\n"
-        "- NO MAJORITY VOTING FOR NULLS/EMPTIES: If a field is null, empty, or absent on most pages but has a valid, non-empty value on at least one page, ALWAYS choose the non-empty value. Never overwrite a valid value with null or empty.\n"
-        "- For each field, choose the single most complete, detailed, and credible value across all pages.\n"
-        "- If the same field appears on multiple pages with DIFFERENT values, prefer:\n"
-        "    1. The value that is non-empty and non-null.\n"
-        "    2. The value that is more complete (not truncated or partial, e.g. 'INV-12345' over '12345').\n"
-        "    3. The value that is clean of OCR noise (e.g. correct digit vs character substitution).\n"
-        "    4. The value from the page where that field would naturally appear (e.g. totals from the last page, header info from the first page).\n"
-        "- For array fields (e.g. line items, members), MERGE arrays from all pages and deduplicate identical rows.\n"
-        "- If a field is empty (\"\") or null on ALL pages, output null for that field.\n"
-        "- NEVER fabricate or infer values not present in any page result.\n"
+        f"You are an OCR data consolidation engine for {doc_type} documents.\n"
+        "You receive PRE-COMPUTED TALLIES — Python has already counted every field's "
+        "occurrences across pages. You do NOT need to count.\n\n"
+
+        "YOUR TASK:\n"
+        "1. For each field, review the RECOMMENDED value.\n"
+        "2. Accept the recommendation unless document-specific rules or semantic "
+        "context clearly indicate a better choice.\n"
+        "3. For TIED fields, use document context to pick the best value.\n"
+        "4. For ARRAY fields, deduplicate using semantic similarity "
+        "(e.g. same person with slightly different name spelling = same entry).\n"
+        "5. For NUMERIC fields, the last-page value is already recommended — But Check First with Other Values, if you have same value multiple times choose that.\n\n"
+
+        "OVERRIDE RULES:\n"
+        "- You may override a recommendation ONLY if the recommended value is clearly "
+        "wrong based on document-type conventions or field-specific rules below.\n"
+        "- Never fabricate values. Only pick from values that actually appeared.\n"
+        "- Each field is fully independent.\n\n"
     )
 
-    if doc_rules:
-        prompt += f"\nDOCUMENT TYPE SPECIFIC RULES:\n{doc_rules}\n"
+    if custom_prompt:
+        prompt += (
+            "ORIGINAL EXTRACTION PROMPT (use for semantic context):\n"
+            f"```\n{custom_prompt}\n```\n\n"
+        )
 
-    prompt += f"\n{_OUTPUT_VALIDATION}"
+    if doc_rules:
+        prompt += f"DOCUMENT TYPE SPECIFIC RULES:\n{doc_rules}\n\n"
+
+    prompt += (
+        "OUTPUT: Return ONLY the final JSON object.\n"
+        "No thinking, no explanation, no markdown fences, no trailing commas.\n"
+        "Start with { and end with }.\n"
+    )
+
     return prompt
+
 
 
