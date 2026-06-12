@@ -2,7 +2,7 @@ import asyncio
 import io
 import os
 import tempfile
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Optional, Set, TypedDict
 
 from fastapi import HTTPException
 from app.core.config import logger, MAX_DOC_PAGES
@@ -79,7 +79,7 @@ def extract_colored_text(fitz_page: fitz.Page) -> list[dict]:
     return colored
 
 
-def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
+def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, page_filter: Optional[Set[int]] = None) -> List[PageData]:
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
@@ -125,6 +125,9 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageD
             if page.image is None:
                 logger.warning("Page %d has no image, skipping.", page_no)
                 continue
+            # Skip pages not in the requested filter
+            if page_filter is not None and page_no not in page_filter:
+                continue
 
             table_image_items: List[Dict[str, Any]] = []
             for table in tables_by_page.get(page_no, []):
@@ -166,13 +169,17 @@ def _run_docling(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageD
         os.unlink(tmp_path)
 
 
-def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
+def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, page_filter: Optional[Set[int]] = None) -> List[PageData]:
     pages: List[PageData] = []
     fitz_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for i, page in enumerate(pdf.pages):
-            if i >= max_pages:
+            page_no = i + 1
+            if page_no > max_pages:
                 break
+            # Skip pages not in the requested filter
+            if page_filter is not None and page_no not in page_filter:
+                continue
             im = page.to_image(resolution=200).original
             native_text = page.extract_text(x_tolerance=3, y_tolerance=5) or ""
 
@@ -190,7 +197,7 @@ def _run_pdfplumber(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[Pa
                 logger.warning("Could not extract colored text on page %d: %s", i + 1, e)
 
             pages.append(PageData(
-                page_no=i + 1,
+                page_no=page_no,
                 image=pil_to_content_item(im),
                 table_images=[],
                 figure_images=[],
@@ -229,12 +236,13 @@ def _extract_tables_markdown(page: Any) -> str:
             parts.append("\n".join(rows))
     return "\n\n".join(parts)
 
-async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> List[PageData]:
+async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, page_filter: Optional[Set[int]] = None) -> List[PageData]:
     # Check total page count first to prevent silent truncation
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             num_pages = len(pdf.pages)
-            if num_pages > max_pages:
+            # Only enforce max_pages limit when no specific page filter is set
+            if page_filter is None and num_pages > max_pages:
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -248,9 +256,11 @@ async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> Lis
     except Exception as e:
         logger.warning("Could not pre-verify PDF page count: %s", e)
 
+    effective_max = max(page_filter) if page_filter else max_pages
+
     logger.info("Routing PDF through Docling pipeline.")
     try:
-        pages = await asyncio.to_thread(_run_docling, pdf_bytes, max_pages)
+        pages = await asyncio.to_thread(_run_docling, pdf_bytes, effective_max, page_filter)
         if pages:
             return pages
         logger.error("Docling returned no pages, falling back to pdfplumber.")
@@ -259,7 +269,7 @@ async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES) -> Lis
 
     logger.info("Falling back to pdfplumber image extraction.")
     try:
-        return await asyncio.to_thread(_run_pdfplumber, pdf_bytes, max_pages)
+        return await asyncio.to_thread(_run_pdfplumber, pdf_bytes, effective_max, page_filter)
     except Exception as e:
         logger.error("pdfplumber also failed to process PDF: %s", e)
         return []

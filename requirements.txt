@@ -1,14 +1,25 @@
+# === Web Framework ===
 fastapi
-uvicorn
+uvicorn[standard]
+python-multipart
+
+# === HTTP & Config ===
 requests
 pydantic
 pydantic-settings
+python-dotenv
+
+# === LLM / AI Pipeline ===
 langchain
+langchain-core
 langchain-openai
 langchain-community
 langgraph
+
+# === PDF Processing ===
 pdfplumber
-Pillow
-python-multipart
-python-dotenv
+PyMuPDF
 docling
+
+# === Image ===
+Pillow

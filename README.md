@@ -213,3 +213,15 @@ edge-ai-ocr/
 ├── requirements.txt    # Python dependencies
 └── README.md           # Project documentation
 ```
+
+Sheet 1 ambil tabel invoice kolom kategori sampe netto
+
+total_invoice_ewp = value ewp  peb
+
+nomor pendaftaran dan tanggal pendaftaran : Page 2 last terakhir 
+
+(Fix Value)
+UNITED KINGDOM
+Surat Keterangan Asal (SKA) Konvensional
+FORM A
+BP Batam

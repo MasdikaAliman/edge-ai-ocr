@@ -1,5 +1,5 @@
 import requests
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Set
 import re
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile as UF
@@ -43,7 +43,80 @@ async def custom_openapi():
     return JSONResponse(content=app.openapi(), media_type="application/json; charset=utf-8")
 
 
-async def _process_files(files: List[UploadFile]) -> List[PageData]:
+def parse_page_filter(pages_str: str) -> Optional[Set[int]]:
+    """Parse a page selection string into a set of 1-based page numbers.
+
+    Supported formats:
+        ""  or "all"  → None (all pages)
+        "1"           → {1}
+        "1,3,5"       → {1, 3, 5}
+        "1-5"         → {1, 2, 3, 4, 5}
+        "1-3,7,9-11"  → {1, 2, 3, 7, 9, 10, 11}
+    """
+    cleaned = pages_str.strip().lower()
+    if not cleaned or cleaned == "all":
+        return None
+
+    page_set: Set[int] = set()
+    for part in cleaned.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            bounds = part.split("-", 1)
+            try:
+                start, end = int(bounds[0].strip()), int(bounds[1].strip())
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_range",
+                        "message": f"Invalid page range: '{part}'. Use format like '1-5'.",
+                    },
+                )
+            if start < 1 or end < start:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_range",
+                        "message": f"Invalid page range: '{part}'. Start must be ≥ 1 and ≤ end.",
+                    },
+                )
+            page_set.update(range(start, end + 1))
+        else:
+            try:
+                num = int(part)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_number",
+                        "message": f"Invalid page number: '{part}'. Must be a positive integer.",
+                    },
+                )
+            if num < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_number",
+                        "message": f"Page number must be ≥ 1, got {num}.",
+                    },
+                )
+            page_set.add(num)
+
+    if not page_set:
+        return None
+    return page_set
+
+
+async def _process_files(
+    files: List[UploadFile],
+    page_filter: Optional[Set[int]] = None,
+) -> List[PageData]:
     if len(files) == 0:
         raise HTTPException(
             status_code=400,
@@ -117,7 +190,7 @@ async def _process_files(files: List[UploadFile]) -> List[PageData]:
             )
     
     if pdf_bytes is not None:
-        pdf_pages = await extract_pages(pdf_bytes)
+        pdf_pages = await extract_pages(pdf_bytes, page_filter=page_filter)
         image_pages = pdf_pages + image_pages
 
     return image_pages
@@ -140,11 +213,20 @@ async def process_ocr_document(
         ...,
         description="Document type. Options: " + ", ".join(DOCUMENT_PROMPTS.keys()),
     ),
+    pages: str = Form(
+        "",
+        description=(
+            "Page selection for PDF files. "
+            "Leave empty or 'all' for all pages. "
+            "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
+        ),
+    ),
 ):
-    image_pages = await _process_files(files)
+    page_filter = parse_page_filter(pages)
+    image_pages = await _process_files(files, page_filter=page_filter)
     result = await run_ocr(document_type, image_pages, None, "")
     create_call_log(
-        request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "files": [f.filename for f in files]},
+        request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "pages": pages, "files": [f.filename for f in files]},
         pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
         messages_sent=result.pop("messages_log", []),
         output=result,
@@ -169,6 +251,14 @@ async def process_ocr_fields(
         [],
         description="List of field names to extract. They will be converted to snake_case internally.",
     ),
+    pages: str = Form(
+        "",
+        description=(
+            "Page selection for PDF files. "
+            "Leave empty or 'all' for all pages. "
+            "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
+        ),
+    ),
 ):
     # Helper to convert strings to snake_case
     def _to_snake_case(value: str) -> str:
@@ -186,10 +276,11 @@ async def process_ocr_fields(
                 raw.append(part)
     normalized_fields = [_to_snake_case(f) for f in raw]
     parsed_fields = normalized_fields or None
-    image_pages = await _process_files(files)
+    page_filter = parse_page_filter(pages)
+    image_pages = await _process_files(files, page_filter=page_filter)
     result = await run_ocr("Fields", image_pages, parsed_fields, "")
     create_call_log(
-        request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "files": [f.filename for f in files]},
+        request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "pages": pages, "files": [f.filename for f in files]},
         pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
         messages_sent=result.pop("messages_log", []),
         output=result,
@@ -214,11 +305,20 @@ async def process_ocr_prompt(
         BASE_DIRECTIVES,
         description="Custom instruction prepended to the model input.",
     ),
+    pages: str = Form(
+        "",
+        description=(
+            "Page selection for PDF files. "
+            "Leave empty or 'all' for all pages. "
+            "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
+        ),
+    ),
 ):
-    image_pages = await _process_files(files)
+    page_filter = parse_page_filter(pages)
+    image_pages = await _process_files(files, page_filter=page_filter)
     result = await run_ocr("Custom", image_pages, None, custom_prompt)
     create_call_log(
-        request_data={"endpoint": "/ocr/process/prompt", "custom_prompt": custom_prompt, "files": [f.filename for f in files]},
+        request_data={"endpoint": "/ocr/process/prompt", "custom_prompt": custom_prompt, "pages": pages, "files": [f.filename for f in files]},
         pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
         messages_sent=result.pop("messages_log", []),
         output=result,
