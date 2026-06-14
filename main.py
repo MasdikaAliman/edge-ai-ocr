@@ -43,79 +43,10 @@ async def custom_openapi():
     return JSONResponse(content=app.openapi(), media_type="application/json; charset=utf-8")
 
 
-def parse_page_filter(pages_str: str) -> Optional[Set[int]]:
-    """Parse a page selection string into a set of 1-based page numbers.
-
-    Supported formats:
-        ""  or "all"  → None (all pages)
-        "1"           → {1}
-        "1,3,5"       → {1, 3, 5}
-        "1-5"         → {1, 2, 3, 4, 5}
-        "1-3,7,9-11"  → {1, 2, 3, 7, 9, 10, 11}
-    """
-    cleaned = pages_str.strip().lower()
-    if not cleaned or cleaned == "all":
-        return None
-
-    page_set: Set[int] = set()
-    for part in cleaned.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            bounds = part.split("-", 1)
-            try:
-                start, end = int(bounds[0].strip()), int(bounds[1].strip())
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error_type": "invalid_page_range",
-                        "message": f"Invalid page range: '{part}'. Use format like '1-5'.",
-                    },
-                )
-            if start < 1 or end < start:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error_type": "invalid_page_range",
-                        "message": f"Invalid page range: '{part}'. Start must be ≥ 1 and ≤ end.",
-                    },
-                )
-            page_set.update(range(start, end + 1))
-        else:
-            try:
-                num = int(part)
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error_type": "invalid_page_number",
-                        "message": f"Invalid page number: '{part}'. Must be a positive integer.",
-                    },
-                )
-            if num < 1:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error_type": "invalid_page_number",
-                        "message": f"Page number must be ≥ 1, got {num}.",
-                    },
-                )
-            page_set.add(num)
-
-    if not page_set:
-        return None
-    return page_set
-
-
 async def _process_files(
     files: List[UploadFile],
-    page_filter: Optional[Set[int]] = None,
+    pages: str = "",
+    document_type: str = "",
 ) -> List[PageData]:
     if len(files) == 0:
         raise HTTPException(
@@ -127,10 +58,78 @@ async def _process_files(
             },
         )
 
+    # COO specific composition validation
+    if document_type == "COO":
+        if len(files) > 4:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error_type": "coo_files_limit_exceeded",
+                    "message": "Unggahan berkas COO melebihi batas (maksimal 4 berkas: PEB, INV, PL, BL).",
+                },
+            )
+
+        types_found = {"BL": 0, "PEB": 0, "PL": 0, "INV": 0}
+        for upload in files:
+            name = upload.filename.lower()
+            if "bl" in name or "lading" in name or "bill" in name:
+                types_found["BL"] += 1
+            elif "peb" in name or "ekspor" in name:
+                types_found["PEB"] += 1
+            elif "packing" in name or "pl" in name:
+                types_found["PL"] += 1
+            elif "invoice" in name or "inv" in name:
+                types_found["INV"] += 1
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "file_pages_required",
+                        "message": f"Berkas tidak didukung ({upload.filename}), pastikan berkas berkaitan dengan tipe dokumen COO.",
+                    },
+                )
+
+        missing = [t for t, count in types_found.items() if count == 0]
+        duplicates = [t for t, count in types_found.items() if count > 1]
+
+        if missing or duplicates:
+            msg_parts = []
+            if missing:
+                msg_parts.append(f"berkas kurang: {', '.join(missing)}")
+            if duplicates:
+                msg_parts.append(f"berkas duplikat: {', '.join(duplicates)}")
+            
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error_type": "coo_invalid_composition",
+                    "message": f"Komposisi berkas COO tidak valid. {'; '.join(msg_parts)}.",
+                },
+            )
+
     pdf_count = 0
     image_count = 0
-    pdf_bytes: Optional[bytes] = None
     image_pages: List[PageData] = []
+
+    # Check multiple PDFs condition: only allow multiple PDFs if document_type == "COO"
+    for upload in files:
+        content_type = upload.content_type or "application/octet-stream"
+        mime = content_type.split(";")[0].strip().lower()
+        if mime == "application/pdf":
+            pdf_count += 1
+
+    if document_type != "COO" and pdf_count > 1:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_type": "multiple_pdfs",
+                "message": "Only a single PDF file is allowed.",
+            },
+        )
 
     for upload in files:
         content_type = upload.content_type or "application/octet-stream"
@@ -148,17 +147,29 @@ async def _process_files(
         try:
             mime = content_type.split(";")[0].strip().lower()
             if mime == "application/pdf":
-                pdf_count += 1
-                if pdf_count > 1:
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "success": False,
-                            "error_type": "multiple_pdfs",
-                            "message": "Only a single PDF file is allowed.",
-                        },
-                    )
-                pdf_bytes = raw_bytes
+                # Determine page range rule for this PDF
+                if document_type == "COO":
+                    name = upload.filename.lower()
+                    if "bl" in name or "lading" in name or "bill" in name:
+                        file_pages = pages if pages else ""
+                    elif "peb" in name or "ekspor" in name:
+                        file_pages = pages if pages else "1"
+                    elif "packing" in name or "pl" in name:
+                        file_pages = pages if pages else "1"
+                    elif "invoice" in name or "inv" in name:
+                        file_pages = pages if pages else "-2"
+                    else: 
+                        file_pages = pages
+                elif document_type == "Invoice":
+                    file_pages = pages if pages else "1, -2"
+                else:
+                    file_pages = pages
+
+                pdf_pages = await extract_pages(raw_bytes, pages_str=file_pages)
+                # We need to assign sequential page numbers to avoid duplicates
+                for page in pdf_pages:
+                    page["page_no"] = len(image_pages) + 1
+                    image_pages.append(page)
             else:
                 image_count += 1
                 if image_count > MAX_DOC_PAGES:
@@ -188,10 +199,6 @@ async def _process_files(
                     "message": f"Could not process file '{upload.filename}': {e}",
                 },
             )
-    
-    if pdf_bytes is not None:
-        pdf_pages = await extract_pages(pdf_bytes, page_filter=page_filter)
-        image_pages = pdf_pages + image_pages
 
     return image_pages
 
@@ -222,8 +229,7 @@ async def process_ocr_document(
         ),
     ),
 ):
-    page_filter = parse_page_filter(pages)
-    image_pages = await _process_files(files, page_filter=page_filter)
+    image_pages = await _process_files(files, pages=pages, document_type=document_type)
     result = await run_ocr(document_type, image_pages, None, "")
     create_call_log(
         request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "pages": pages, "files": [f.filename for f in files]},
@@ -276,8 +282,7 @@ async def process_ocr_fields(
                 raw.append(part)
     normalized_fields = [_to_snake_case(f) for f in raw]
     parsed_fields = normalized_fields or None
-    page_filter = parse_page_filter(pages)
-    image_pages = await _process_files(files, page_filter=page_filter)
+    image_pages = await _process_files(files, pages=pages, document_type="Fields")
     result = await run_ocr("Fields", image_pages, parsed_fields, "")
     create_call_log(
         request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "pages": pages, "files": [f.filename for f in files]},
@@ -314,8 +319,7 @@ async def process_ocr_prompt(
         ),
     ),
 ):
-    page_filter = parse_page_filter(pages)
-    image_pages = await _process_files(files, page_filter=page_filter)
+    image_pages = await _process_files(files, pages=pages, document_type="Custom")
     result = await run_ocr("Custom", image_pages, None, custom_prompt)
     create_call_log(
         request_data={"endpoint": "/ocr/process/prompt", "custom_prompt": custom_prompt, "pages": pages, "files": [f.filename for f in files]},

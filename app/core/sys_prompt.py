@@ -280,6 +280,49 @@ IJAZAH_SCHEMA = """{
   "tanggal_ijazah": "DD/MM/YYYY | null"
 }"""
 
+BL_SCHEMA = """{
+  "vessel_voyage_no": "string | null",
+  "mvs": "string | null",
+  "document_no": "string | null",
+  "document_date": "string | null",
+  "ship_date": "string | null",
+  "consignee": "string | null"
+}"""
+
+PEB_SCHEMA = """{
+  "nomor_pendaftaran": "string | null",
+  "tanggal_pendaftaran": "string | null",
+  "pelabuhan_muat": "string | null",
+  "pelabuhan_bongkar": "string | null",
+  "country_of_destination": "string | null",
+  "nilai_transaksi": "string | null",
+  "form": "string | null"
+}"""
+
+PL_SCHEMA = """{
+  "no": "string | null",
+  "date": "string | null"
+}"""
+
+COO_SCHEMA = """{
+  "consignee": "string | null",
+  "vessel_voyage_no": "string | null",
+  "mvs": "string | null",
+  "port_of_loading": "string | null",
+  "port_of_discharge": "string | null",
+  "invoice_no": "string | null",
+  "invoice_date": "string | null",
+  "document_no_bl": "string | null",
+  "date_bl": "string | null",
+  "document_no_peb": "string | null",
+  "date_peb": "string | null",
+  "document_no_pl": "string | null",
+  "date_pl": "string | null",
+  "total_amount": "string | null",
+  "ship_date": "string | null",
+  "country_of_destination": "string | null"
+}"""
+
 DOCUMENT_SCHEMAS = {
     "KTP": KTP_SCHEMA,
     "KK": KK_SCHEMA,
@@ -288,6 +331,10 @@ DOCUMENT_SCHEMAS = {
     "Quotation": QUOTATION_SCHEMA,
     "SIM": SIM_SCHEMA,
     "IJAZAH": IJAZAH_SCHEMA,
+    "BL": BL_SCHEMA,
+    "PEB": PEB_SCHEMA,
+    "PL": PL_SCHEMA,
+    "COO": COO_SCHEMA,
 }
 
 
@@ -360,6 +407,26 @@ EXPECTED SCHEMA:
     "IJAZAH": f"""
 EXPECTED SCHEMA:
 {IJAZAH_SCHEMA}
+""",
+    "BL": f"""
+EXPECTED SCHEMA:
+{BL_SCHEMA}
+""",
+    "PEB": f"""
+EXPECTED SCHEMA:
+{PEB_SCHEMA}
+""",
+    "PL": f"""
+EXPECTED SCHEMA:
+{PL_SCHEMA}
+""",
+    "COO": f"""
+EXPECTED SCHEMA:
+{COO_SCHEMA}
+CONFLICT RESOLUTION:
+- Consolidate data from B/L, PEB, PL, and Invoice pages.
+- In case of conflict, prefer `total_amount` from the PEB page (nilai_transaksi).
+- In case of conflict, prefer `receiving_company` (consignee) from the B/L page.
 """
 }
 

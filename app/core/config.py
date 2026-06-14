@@ -17,7 +17,7 @@ ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "ima
 BASE_URL_LLM = os.getenv("BASE_URL_LLM", "http://localhost:1234")
 MODEL_NAME = os.getenv("MODEL_NAME", "qwen/qwen3-vl-4b")
 
-DocumentType = Literal["KTP", "KK", "NPWP", "Invoice", "Quotation", "SIM", "IJAZAH"]
+DocumentType = Literal["KTP", "KK", "NPWP", "Invoice", "Quotation", "SIM", "IJAZAH", "BL", "PEB", "PL", "COO"]
 
 model = init_chat_model(
     model=MODEL_NAME,

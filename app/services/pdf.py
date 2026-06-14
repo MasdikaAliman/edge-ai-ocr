@@ -236,25 +236,103 @@ def _extract_tables_markdown(page: Any) -> str:
             parts.append("\n".join(rows))
     return "\n\n".join(parts)
 
-async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, page_filter: Optional[Set[int]] = None) -> List[PageData]:
-    # Check total page count first to prevent silent truncation
-    try:
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            num_pages = len(pdf.pages)
-            # Only enforce max_pages limit when no specific page filter is set
-            if page_filter is None and num_pages > max_pages:
+def parse_page_filter(pages_str: str, total_pages: int = 0) -> Optional[Set[int]]:
+    """Parse a page selection string into a set of 1-based page numbers.
+
+    Supported formats:
+        ""  or "all"  → None (all pages)
+        "1"           → {1}
+        "-1"          → {total_pages} (last page)
+        "1,3,5"       → {1, 3, 5}
+        "1-5"         → {1, 2, 3, 4, 5}
+        "1-3,7,9-11"  → {1, 2, 3, 7, 9, 10, 11}
+        "1, -2, -1"   → {1, total_pages - 1, total_pages}
+    """
+    cleaned = pages_str.strip().lower()
+    if not cleaned or cleaned == "all":
+        return None
+
+    page_set: Set[int] = set()
+    for part in cleaned.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # Check for range: e.g. "1-5", or "-2--1" (avoiding single negative number check)
+        # We search for hyphen separating start and end. If start is negative, it begins with "-"
+        search_idx = 1 if part.startswith("-") else 0
+        hyphen_idx = part.find("-", search_idx)
+        
+        if hyphen_idx != -1:
+            start_str = part[:hyphen_idx].strip()
+            end_str = part[hyphen_idx+1:].strip()
+            try:
+                start = int(start_str)
+                end = int(end_str)
+                if start < 0 and total_pages > 0:
+                    start = total_pages + 1 + start
+                if end < 0 and total_pages > 0:
+                    end = total_pages + 1 + end
+            except ValueError:
                 raise HTTPException(
                     status_code=400,
                     detail={
                         "success": False,
-                        "error_type": "page_limit_exceeded",
-                        "message": f"Too many pages. Maximum is {max_pages}, but the PDF has {num_pages} pages.",
+                        "error_type": "invalid_page_range",
+                        "message": f"Invalid page range: '{part}'. Use format like '1-5' or '-2--1'.",
                     },
                 )
-    except HTTPException:
-        raise
+            if start < 1 or end < start:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_range",
+                        "message": f"Invalid page range: '{part}'. Start must be ≥ 1 and ≤ end.",
+                    },
+                )
+            page_set.update(range(start, end + 1))
+        else:
+            try:
+                num = int(part)
+                if num < 0 and total_pages > 0:
+                    num = total_pages + 1 + num
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "invalid_page_number",
+                        "message": f"Invalid page number: '{part}'. Must be an integer.",
+                    },
+                )
+            if num < 1:
+                # If negative number resolves out of bounds, skip
+                continue
+            page_set.add(num)
+            
+    return page_set
+
+async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, pages_str: str = "") -> List[PageData]:
+    # Check total page count first to prevent silent truncation
+    num_pages = 0
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            num_pages = len(pdf.pages)
     except Exception as e:
         logger.warning("Could not pre-verify PDF page count: %s", e)
+
+    page_filter = parse_page_filter(pages_str, num_pages)
+
+    # Only enforce max_pages limit when no specific page filter is set
+    if page_filter is None and num_pages > max_pages:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_type": "page_limit_exceeded",
+                "message": f"Too many pages. Maximum is {max_pages}, but the PDF has {num_pages} pages.",
+            },
+        )
 
     effective_max = max(page_filter) if page_filter else max_pages
 

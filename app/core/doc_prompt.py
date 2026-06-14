@@ -11,6 +11,10 @@ from app.core.sys_prompt import (
     QUOTATION_SCHEMA,
     SIM_SCHEMA,
     IJAZAH_SCHEMA,
+    BL_SCHEMA,
+    PEB_SCHEMA,
+    PL_SCHEMA,
+    COO_SCHEMA,
 )
 
 
@@ -305,6 +309,77 @@ Fields marked as level-specific must be null if the document is a different leve
 {IJAZAH_SCHEMA}
 """
 
+BL_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Bill of Lading (B/L) documents.
+
+{BASE_DIRECTIVES}
+
+EXPECTED FIELDS — extract ALL of the following:
+`vessel_voyage_no` (the vessel name together with the voyage number),
+`mvs` (Mother Vessel / Voyage if explicitly labeled),
+`document_no` (Bill of Lading number),
+`document_date` (document issuance date),
+`ship_date` (shipment / on-board date),
+`consignee` (company name of the consignee receiving the goods).
+
+Extract all fields from this Bill of Lading image. Return a JSON object with this exact schema:
+{BL_SCHEMA}
+"""
+
+PEB_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Indonesian Pemberitahuan Ekspor Barang (PEB) documents.
+
+{BASE_DIRECTIVES}
+
+EXPECTED FIELDS — extract ALL of the following:
+`nomor_pendaftaran` (registration number),
+`tanggal_pendaftaran` (registration date),
+`pelabuhan_muat` (port of loading),
+`pelabuhan_bongkar` (port of discharge),
+`country_of_destination` (destination country),
+`nilai_transaksi` (Nilai Transaksi/CIF value from Box No 30),
+`form` (form type/code).
+
+Extract all fields from this PEB image. Return a JSON object with this exact schema:
+{PEB_SCHEMA}
+"""
+
+PL_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Packing List documents.
+
+{BASE_DIRECTIVES}
+
+EXPECTED FIELDS — extract ALL of the following:
+`no` (Packing List document number),
+`date` (Packing List issue date).
+
+Extract all fields from this Packing List image. Return a JSON object with this exact schema:
+{PL_SCHEMA}
+"""
+
+COO_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Certificate of Origin (COO) documents.
+
+{BASE_DIRECTIVES}
+
+EXPECTED FIELDS — extract ALL of the following:
+`consignee` (Receiving Company name),
+`vessel_voyage_no` (vessel name and voyage number),
+`mvs` (Mother Vessel / Voyage),
+`port_of_loading` (port of loading),
+`port_of_discharge` (port of discharge),
+`invoice_no` (associated Invoice number),
+`invoice_date` (associated Invoice date),
+`document_no_bl` (Bill of Lading number),
+`date_bl` (Bill of Lading date),
+`document_no_peb` (PEB registration number),
+`date_peb` (PEB registration date),
+`document_no_pl` (Packing List number),
+`date_pl` (Packing List date),
+`total_amount` (total invoice value / nilai transaksi),
+`ship_date` (shipment date),
+`country_of_destination` (country of destination).
+
+Extract all fields from this Certificate of Origin image. Return a JSON object with this exact schema:
+{COO_SCHEMA}
+"""
+
 # ---------- Lookup Dictionaries ----------
 
 DOCUMENT_PROMPTS = {
@@ -315,6 +390,10 @@ DOCUMENT_PROMPTS = {
     "Quotation": QUOTATION_PROMPT,
     "SIM":       SIM_PROMPT,
     "IJAZAH":    IJAZAH_PROMPT,
+    "BL":        BL_PROMPT,
+    "PEB":       PEB_PROMPT,
+    "PL":        PL_PROMPT,
+    "COO":       COO_PROMPT,
 }
 
 
