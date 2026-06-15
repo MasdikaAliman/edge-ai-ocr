@@ -199,6 +199,8 @@ export default function App() {
       no_image_provided: "Tidak ada gambar atau PDF yang disediakan.",
       image_limit_exceeded: "Jumlah halaman melebihi batas maksimum.",
       url_not_allowed: "URL gambar eksternal tidak didukung.",
+      coo_files_limit_exceeded: "Unggahan berkas COO melebihi batas (maksimal 4 berkas: PEB, INV, PL, BL)",
+      coo_invalid_composition: errMsg || "Komposisi berkas COO tidak lengkap atau tidak valid (harus terdiri dari BL, PEB, PL, dan Invoice)",
     };
     
     return mappings[errType] || errMsg || "Gagal memproses berkas. Terjadi kesalahan pada server.";
@@ -221,8 +223,13 @@ export default function App() {
     let params = {};
 
     if (activeMode === "doc-type") {
-      endpoint = "/ocr/process/document";
-      params = { document_type: selectedDocType };
+      if (selectedDocType === "COO") {
+        endpoint = "/ocr/process/coo";
+        params = {};
+      } else {
+        endpoint = "/ocr/process/document";
+        params = { document_type: selectedDocType };
+      }
     } else if (activeMode === "fields") {
       endpoint = "/ocr/process/fields";
       params = { fields: fieldsList };
@@ -272,12 +279,12 @@ export default function App() {
           const errData = await response.json();
           const errType = errData?.detail?.error_type || errData?.error_type;
           const errMsg = errData?.detail?.message || errData?.message;
-          console.log(errType, errMsg);
+          // console.log(errType, errMsg);
           throw new Error(mapBackendError(errType, errMsg));
         }
 
         const data = await response.json();
-        console.log(data)
+        // console.log(data)
         setProgressInfo({
           current: 1,
           total: 1,

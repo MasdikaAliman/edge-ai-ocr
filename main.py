@@ -58,70 +58,17 @@ async def _process_files(
             },
         )
 
-    # COO specific composition validation
-    if document_type == "COO":
-        if len(files) > 4:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "success": False,
-                    "error_type": "coo_files_limit_exceeded",
-                    "message": "Unggahan berkas COO melebihi batas (maksimal 4 berkas: PEB, INV, PL, BL).",
-                },
-            )
-
-        types_found = {"BL": 0, "PEB": 0, "PL": 0, "INV": 0}
-        for upload in files:
-            name = upload.filename.lower()
-            if "bl" in name or "lading" in name or "bill" in name:
-                types_found["BL"] += 1
-            elif "peb" in name or "ekspor" in name:
-                types_found["PEB"] += 1
-            elif "packing" in name or "pl" in name:
-                types_found["PL"] += 1
-            elif "invoice" in name or "inv" in name:
-                types_found["INV"] += 1
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error_type": "file_pages_required",
-                        "message": f"Berkas tidak didukung ({upload.filename}), pastikan berkas berkaitan dengan tipe dokumen COO.",
-                    },
-                )
-
-        missing = [t for t, count in types_found.items() if count == 0]
-        duplicates = [t for t, count in types_found.items() if count > 1]
-
-        if missing or duplicates:
-            msg_parts = []
-            if missing:
-                msg_parts.append(f"berkas kurang: {', '.join(missing)}")
-            if duplicates:
-                msg_parts.append(f"berkas duplikat: {', '.join(duplicates)}")
-            
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "success": False,
-                    "error_type": "coo_invalid_composition",
-                    "message": f"Komposisi berkas COO tidak valid. {'; '.join(msg_parts)}.",
-                },
-            )
-
     pdf_count = 0
     image_count = 0
     image_pages: List[PageData] = []
 
-    # Check multiple PDFs condition: only allow multiple PDFs if document_type == "COO"
     for upload in files:
         content_type = upload.content_type or "application/octet-stream"
         mime = content_type.split(";")[0].strip().lower()
         if mime == "application/pdf":
             pdf_count += 1
 
-    if document_type != "COO" and pdf_count > 1:
+    if pdf_count > 1:
         raise HTTPException(
             status_code=400,
             detail={
@@ -148,25 +95,19 @@ async def _process_files(
             mime = content_type.split(";")[0].strip().lower()
             if mime == "application/pdf":
                 # Determine page range rule for this PDF
-                if document_type == "COO":
-                    name = upload.filename.lower()
-                    if "bl" in name or "lading" in name or "bill" in name:
-                        file_pages = pages if pages else ""
-                    elif "peb" in name or "ekspor" in name:
-                        file_pages = pages if pages else "1"
-                    elif "packing" in name or "pl" in name:
-                        file_pages = pages if pages else "1"
-                    elif "invoice" in name or "inv" in name:
-                        file_pages = pages if pages else "-2"
-                    else: 
-                        file_pages = pages
-                elif document_type == "Invoice":
+                if document_type == "INV_COO":
+                    file_pages = pages if pages else "1"
+                elif document_type == "PEB":
+                    file_pages = pages if pages else "-2"
+                elif document_type == "PL":
+                    file_pages = pages if pages else "1"
+                elif document_type == "Invoice_SPBB":
                     file_pages = pages if pages else "1, -2"
                 else:
                     file_pages = pages
 
                 pdf_pages = await extract_pages(raw_bytes, pages_str=file_pages)
-                # We need to assign sequential page numbers to avoid duplicates
+                # Assign sequential page numbers to avoid duplicates
                 for page in pdf_pages:
                     page["page_no"] = len(image_pages) + 1
                     image_pages.append(page)
@@ -186,6 +127,8 @@ async def _process_files(
                     page_no=len(image_pages) + 1,
                     image=content_item,
                     table_images=[],
+                    figure_images=[],
+                    colored_texts=[],
                     markdown="",
                 ))
         except HTTPException:
@@ -199,7 +142,6 @@ async def _process_files(
                     "message": f"Could not process file '{upload.filename}': {e}",
                 },
             )
-
     return image_pages
 
 
@@ -328,6 +270,186 @@ async def process_ocr_prompt(
         output=result,
     )
     return result
+@app.post(
+    "/ocr/process/coo",
+    summary="Extract fields from 4 Certificate of Origin (COO) files and merge",
+    tags=["OCR"],
+)
+async def process_ocr_coo(
+    files: List[UploadFile] = File(
+        ...,
+        description=(
+            "Upload exactly 4 PDF/Image files: one of each for BL, PEB, PL, and Invoice (INV)."
+        ),
+    ),
+    pages: str = Form(
+        "",
+        description="Optional page filter. If not specified, default heuristics will be applied for each document type.",
+    ),
+):
+    if len(files) > 4:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_type": "coo_files_limit_exceeded",
+                "message": "Unggahan berkas COO melebihi batas (maksimal 4 berkas: PEB, INV, PL, BL).",
+            },
+        )
+
+    classified: Dict[str, UploadFile] = {
+        "BL": None,
+        "PEB": None,
+        "PL": None,
+        "INV_COO": None
+    }
+
+    for upload in files:
+        name = upload.filename.lower()
+        if "bl" in name or "lading" in name or "bill" in name:
+            if classified["BL"] is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "coo_invalid_composition",
+                        "message": "Komposisi berkas COO tidak valid. Ditemukan lebih dari satu berkas BL.",
+                    },
+                )
+            classified["BL"] = upload
+        elif "peb" in name or "ekspor" in name:
+            if classified["PEB"] is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "coo_invalid_composition",
+                        "message": "Komposisi berkas COO tidak valid. Ditemukan lebih dari satu berkas PEB.",
+                    },
+                )
+            classified["PEB"] = upload
+        elif "packing" in name or "pl" in name:
+            if classified["PL"] is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "coo_invalid_composition",
+                        "message": "Komposisi berkas COO tidak valid. Ditemukan lebih dari satu berkas PL.",
+                    },
+                )
+            classified["PL"] = upload
+        elif "invoice" in name or "inv" in name:
+            if classified["INV_COO"] is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error_type": "coo_invalid_composition",
+                        "message": "Komposisi berkas COO tidak valid. Ditemukan lebih dari satu berkas Invoice.",
+                    },
+                )
+            classified["INV_COO"] = upload
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error_type": "file_pages_required",
+                    "message": f"Berkas tidak didukung ({upload.filename}), pastikan berkas berkaitan dengan tipe dokumen COO (BL, PEB, PL, INV).",
+                },
+            )
+
+    missing = [t for t, f in classified.items() if f is None]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error_type": "coo_invalid_composition",
+                "message": f"Komposisi berkas COO tidak lengkap. Berkas berikut kurang: {', '.join(missing)}.",
+            },
+        )
+
+    # Process BL
+    bl_pages = pages if pages else ""
+    bl_file_pages = await _process_files([classified["BL"]], pages=bl_pages, document_type="BL")
+    bl_result = await run_ocr("BL", bl_file_pages, None, "")
+    bl_data = bl_result.get("data", {}) if bl_result.get("success") else {}
+    bl_data = bl_data or {}
+
+    # Process PEB
+    peb_pages = pages if pages else "-2"
+    peb_file_pages = await _process_files([classified["PEB"]], pages=peb_pages, document_type="PEB")
+    peb_result = await run_ocr("PEB", peb_file_pages, None, "")
+    peb_data = peb_result.get("data", {}) if peb_result.get("success") else {}
+    peb_data = peb_data or {}
+
+    # Process PL
+    pl_pages = pages if pages else "1"
+    pl_file_pages = await _process_files([classified["PL"]], pages=pl_pages, document_type="PL")
+    pl_result = await run_ocr("PL", pl_file_pages, None, "")
+    pl_data = pl_result.get("data", {}) if pl_result.get("success") else {}
+    pl_data = pl_data or {}
+
+    # Process INV_COO
+    inv_pages = pages if pages else "1"
+    inv_file_pages = await _process_files([classified["INV_COO"]], pages=inv_pages, document_type="INV_COO")
+    inv_result = await run_ocr("INV_COO", inv_file_pages, None, "")
+    inv_data = inv_result.get("data", {}) if inv_result.get("success") else {}
+    inv_data = inv_data or {}
+
+    # Programmatic merge based on the sub-document schemas
+    merged_data = {
+        "consignee": bl_data.get("consignee"),
+        "vessel_voyage_no": bl_data.get("vessel_voyage_no"),
+        "mvs": bl_data.get("mvs"),
+        "invoice_no": inv_data.get("invoice_number"),
+        "invoice_date": inv_data.get("invoice_date"),
+        "document_no_bl": bl_data.get("document_no"),
+        "date_bl": bl_data.get("document_date"),
+        "document_no_peb": peb_data.get("nomor_pendaftaran"),
+        "date_peb": peb_data.get("tanggal_pendaftaran"),
+        "document_no_pl": pl_data.get("no"),
+        "date_pl": pl_data.get("date"),
+        "ship_date": bl_data.get("ship_date"),
+        "country_of_destination": bl_data.get("country_of_destination"),
+        "form": inv_data.get("form"),
+        "table": inv_data.get("table", []),
+        "total_amount": inv_data.get("total_amount"),
+        "total_weight_bruto": inv_data.get("total_weight_bruto"),
+        "total_weight_netto": inv_data.get("total_weight_netto"),
+        "total_quantity_ctns": inv_data.get("total_quantity_ctns"),
+        "total_quantity_pcs": inv_data.get("total_quantity_pcs"),
+    }
+
+    # Combined logs formatting
+    combined_pdf_result = []
+    combined_messages_log = []
+
+    for pages_data in [bl_file_pages, peb_file_pages, pl_file_pages, inv_file_pages]:
+        for p in pages_data:
+            combined_pdf_result.append({
+                "page_no": len(combined_pdf_result) + 1,
+                "markdown": p.get("markdown", ""),
+                "image": p["image"],
+                "table_images": p.get("table_images", [])
+            })
+
+    for res in [bl_result, peb_result, pl_result, inv_result]:
+        if "messages_log" in res:
+            combined_messages_log.extend(res["messages_log"])
+
+    result_output = {"success": True, "data": merged_data}
+    create_call_log(
+        request_data={"endpoint": "/ocr/process/coo", "pages": pages, "files": [f.filename for f in files]},
+        pdf_result=combined_pdf_result,
+        messages_sent=combined_messages_log,
+        output=result_output,
+    )
+
+    return result_output
+
 
 
 @app.get("/health", tags=["Utility"])
@@ -355,9 +477,10 @@ async def root():
     return {
         "name": "Document OCR API",
         "version": "5.1.0",
-        "supported_document_types": list(DOCUMENT_PROMPTS.keys()),
+        "supported_document_types": list(DOCUMENT_PROMPTS.keys()) + ["COO"],
         "endpoints": {
             "document_ocr": "POST /ocr/process/document",
+            "coo_ocr":      "POST /ocr/process/coo",
             "fields_ocr":   "POST /ocr/process/fields",
             "prompt_ocr":   "POST /ocr/process/prompt",
             "health":       "GET  /health",

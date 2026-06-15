@@ -95,7 +95,7 @@ export async function processBatch({
             }
 
             const data = await response.json();
-            console.log(data);
+            // console.log(data);
             results.push({
               filename: file.name,
               data: data,
