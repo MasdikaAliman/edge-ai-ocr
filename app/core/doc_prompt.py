@@ -7,17 +7,18 @@ from app.core.sys_prompt import (
     KTP_SCHEMA,
     KK_SCHEMA,
     NPWP_SCHEMA,
-    INVOICE_SCHEMA,
-    QUOTATION_SCHEMA,
     SIM_SCHEMA,
     IJAZAH_SCHEMA,
-    BL_SCHEMA,
-    PEB_SCHEMA,
-    PL_SCHEMA,
-    COO_SCHEMA,
+    )
+from app.core.quatation_prompt import QUOTATION_PROMPT
+from app.core.spbb_prompt import INVOICE_SPBB_PROMPT
+from app.core.coo_prompt import (
+    PEB_PROMPT,
+    PL_PROMPT,
+    BL_PROMPT,
+    COO_PROMPT,
+    INV_COO_PROMPT,
 )
-
-
 # ---------- Document-Specific Prompts ----------
 
 KTP_PROMPT = f"""You are an expert OCR engine specialized in Indonesian \
@@ -83,111 +84,7 @@ Extract all fields from this NPWP (Nomor Pokok Wajib Pajak) card image. Return a
 {NPWP_SCHEMA}
 """
 
-INVOICE_PROMPT = f"""You are an expert OCR engine specialized in Invoice / Receipt documents.
 
-{BASE_DIRECTIVES}
-
-OUTPUT SCHEMA — the output object must follow exactly this structure, no extra keys:
-{INVOICE_SCHEMA}
-
-═══ HEADER FIELDS ═══
-
-invoice_number:
-  Labels: "Invoice #", "Invoice No", "Invoice No.", "Document No", "Doc No", "No."
-  Extract the alphanumeric identifier that follows.
-
-invoice_date:
-  Labels: "Invoice Date", "Date", "Issued", "Issue Date"
-  Extract verbatim (e.g. "15 Jan 2025").
-
-due_date:
-  Labels: "Due Date", "Payment Due", "Pay By", "Due"
-  Extract verbatim.
-
-purchase_order:
-  Labels: "P.O.#", "P.O. No", "PO", "Purchase Order", "PO Number"
-  Use the header value if multiple references exist. Set "" if absent.
-
-═══ CURRENCY ═══
-Extract symbol only ("$", "Rp", "€") or ISO code (USD, IDR) into `currency`.
-Do NOT include symbol inside `total_amount`.
-
-═══ TOTAL AMOUNT ═══
-Use the FIRST match found, in this priority order:
-  1. "TOTAL" (standalone, all-caps)
-  2. "Grand Total"
-  3. "Total Due"
-  4. "Total Payable"
-  5. "Amount Due"
-EXCLUDE: "Subtotal", "Sub Total", "Tax", "VAT", "Discount", "Shipping".
-Extract numeric value only (no currency symbol).
-
-═══ SALES ORDER ═══
-Search in this order:
-  1. Header label: "Sales Order", "S.O.", "SO No", "Order No"
-  2. Description column of line items
-  3. Footer / remarks area
-Patterns (case-insensitive): "SO-XXXXX", "SO XXXXX", "S.O.", "Sales Order", "Order No/Number".
-
-═══ REMARK ═══
-Extract ONLY human-written, meaningful notes, for example:
-  - "Partial delivery — remaining items on backorder"
-  - "Approved by: John Doe"
-If a remark block contains a mix of valid notes and boilerplate, extract ONLY the
-meaningful portion and discard the rest.
-DISCARD: "Thank you for your business", payment instructions, bank details,
-terms & conditions, any system-generated template text.
-Set "" if no valid remark exists.
-"""
-
-QUOTATION_PROMPT = f"""You are an expert OCR engine specialized in Quotation / Price Quote documents.
-
-{BASE_DIRECTIVES}
-
-VISUAL EXTRACTION HINTS:
-- Color priority for material codes in table cells: RED TEXT > BLUE TEXT > DEFAULT TEXT.
-- If a cell contains both colored and default text, extract only the colored portion for `material_code`.
-- `quotation_number` and `quotation_date` must come ONLY from the document header or the
-  top row of the items table. Ignore any occurrence in footers or other sections.
-- `purchasing_group`, `plant`, `lead_time`, `submitted_by` come from a single dedicated
-  summary/info table — ignore all other text blocks for these fields.
-- Preserve codes exactly as printed: `plant` = "TG 4318 PL01", `lead_time` = "7 days".
-
-OUTPUT SCHEMA — the output object must follow exactly this structure:
-{QUOTATION_SCHEMA}
-
-═══ HEADER FIELDS ═══
-quotation_number : from document header only.
-quotation_date   : from document header only; extract verbatim.
-sales_agent      : person's name listed as agent/sales.
-no_telp          : phone/contact number for the agent.
-currency         : symbol or ISO code (see currency rule above).
-
-═══ SUMMARY / INFO TABLE FIELDS ═══
-Extract these ONLY from the dedicated summary/info table:
-purchasing_group : as printed (e.g. "P03").
-plant            : full code as printed, preserve spaces (e.g. "TG 4318 PL01").
-lead_time        : preserve unit word (e.g. "7 days", "14 hari").
-submitted_by     : person's name.
-
-═══ LINE ITEMS TABLE ═══
-Each row = one object in `material_items`. Every object MUST contain all keys listed above.
-
-Field rules per row:
-  item_number          → value from item/no column; "" if cell is empty; include the key always.
-  material_code        → extract from RED or BLUE colored text in the material column; "" if no colored text.
-  material_description → full text description of the material/item.
-  quantity             → raw value from quantity column (e.g. "100").
-  unit                 → unit text from the unit column (e.g. "EA", "KG"); "" if column absent.
-  unit_price           → raw value from unit price column; NEVER calculate; "" if absent.
-  amount               → raw value from amount/total column (e.g. "1,500,000.00"); "" if absent.
-  UoM                  → unit of measure (e.g. "EA", "KG"); "" if absent.
-total_amount         → total amount of the quotation
-MISSING COLUMN RULE:
-- If a column does not exist in the document, set its field to "" in every row.
-- NEVER omit a key from any item object.
-- NEVER calculate or validate any numeric value.
-"""
 
 SIM_PROMPT = f"""You are an Indonesian driving license (SIM) OCR specialist. Extract structured data from SIM images accurately.
 
@@ -309,76 +206,9 @@ Fields marked as level-specific must be null if the document is a different leve
 {IJAZAH_SCHEMA}
 """
 
-BL_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Bill of Lading (B/L) documents.
 
-{BASE_DIRECTIVES}
 
-EXPECTED FIELDS — extract ALL of the following:
-`vessel_voyage_no` (the vessel name together with the voyage number),
-`mvs` (Mother Vessel / Voyage if explicitly labeled),
-`document_no` (Bill of Lading number),
-`document_date` (document issuance date),
-`ship_date` (shipment / on-board date),
-`consignee` (company name of the consignee receiving the goods).
 
-Extract all fields from this Bill of Lading image. Return a JSON object with this exact schema:
-{BL_SCHEMA}
-"""
-
-PEB_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Indonesian Pemberitahuan Ekspor Barang (PEB) documents.
-
-{BASE_DIRECTIVES}
-
-EXPECTED FIELDS — extract ALL of the following:
-`nomor_pendaftaran` (registration number),
-`tanggal_pendaftaran` (registration date),
-`pelabuhan_muat` (port of loading),
-`pelabuhan_bongkar` (port of discharge),
-`country_of_destination` (destination country),
-`nilai_transaksi` (Nilai Transaksi/CIF value from Box No 30),
-`form` (form type/code).
-
-Extract all fields from this PEB image. Return a JSON object with this exact schema:
-{PEB_SCHEMA}
-"""
-
-PL_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Packing List documents.
-
-{BASE_DIRECTIVES}
-
-EXPECTED FIELDS — extract ALL of the following:
-`no` (Packing List document number),
-`date` (Packing List issue date).
-
-Extract all fields from this Packing List image. Return a JSON object with this exact schema:
-{PL_SCHEMA}
-"""
-
-COO_PROMPT = f"""You are a high-precision OCR extraction engine specialized in Certificate of Origin (COO) documents.
-
-{BASE_DIRECTIVES}
-
-EXPECTED FIELDS — extract ALL of the following:
-`consignee` (Receiving Company name),
-`vessel_voyage_no` (vessel name and voyage number),
-`mvs` (Mother Vessel / Voyage),
-`port_of_loading` (port of loading),
-`port_of_discharge` (port of discharge),
-`invoice_no` (associated Invoice number),
-`invoice_date` (associated Invoice date),
-`document_no_bl` (Bill of Lading number),
-`date_bl` (Bill of Lading date),
-`document_no_peb` (PEB registration number),
-`date_peb` (PEB registration date),
-`document_no_pl` (Packing List number),
-`date_pl` (Packing List date),
-`total_amount` (total invoice value / nilai transaksi),
-`ship_date` (shipment date),
-`country_of_destination` (country of destination).
-
-Extract all fields from this Certificate of Origin image. Return a JSON object with this exact schema:
-{COO_SCHEMA}
-"""
 
 # ---------- Lookup Dictionaries ----------
 
@@ -386,14 +216,14 @@ DOCUMENT_PROMPTS = {
     "KTP":       KTP_PROMPT,
     "KK":        KK_PROMPT,
     "NPWP":      NPWP_PROMPT,
-    "Invoice":   INVOICE_PROMPT,
+    "Invoice_SPBB":   INVOICE_SPBB_PROMPT,
     "Quotation": QUOTATION_PROMPT,
     "SIM":       SIM_PROMPT,
     "IJAZAH":    IJAZAH_PROMPT,
     "BL":        BL_PROMPT,
+    "INV_COO":   INV_COO_PROMPT,
     "PEB":       PEB_PROMPT,
     "PL":        PL_PROMPT,
-    "COO":       COO_PROMPT,
 }
 
 

@@ -29,6 +29,23 @@ CURRENCY EXTRACTION:
 - If no currency found, set `currency` to "".
 """
 
+_COO_RULE_DATE = """
+DATE NORMALIZATION RULES (apply to EVERY date field):
+- ALL dates MUST be returned in DD-MM-YYYY format (2-digit day, 2-digit month, 4-digit year).
+- Convert month names or abbreviations into numeric months.
+- Example conversions:
+  "12-May-2021"   → "12-05-2021"
+  "May 12, 2021"  → "12-05-2021"
+  "2021/05/12"    → "12-05-2021"
+  "12.05.2021"    → "12-05-2021"
+  "2021-05-12"    → "12-05-2021"
+  "12 MEI 2021"   → "12-05-2021"
+- Preserve the original year exactly as printed.
+- If a date cannot be parsed with certainty, return null.
+"""
+
+
+
 NUMERIC_RULE = """
 NUMERIC FIELDS RULE:
 - Always return numeric values as strings, never as bare numbers.
@@ -61,6 +78,27 @@ OUTPUT FORMAT:
 {_DATE_RULE}
 {NUMERIC_RULE}
 """
+
+BASE_DIRECTIVES_COO = f"""
+EXTRACTION RULES:
+- Extract text VERBATIM as it appears in the document. No paraphrasing.
+- Unreadable value → use empty string ""
+- Field present but blank → use null
+- Field/column exists but has no data in a specific row → use ""
+- NEVER omit a key because its value is missing — always include the key with "" or null.
+- NEVER fabricate, infer, or hallucinate any value.
+- Keys: snake_case only (e.g. "Document Title" → "document_title").
+
+OUTPUT FORMAT:
+- Return a raw JSON object directly. Avoid markdown formatting, code fences (``` or ```json), or commentary.
+- Do NOT wrap output in "success", "data", "result", or any envelope object.
+- Do NOT add any text before or after the JSON.
+{_OUTPUT_VALIDATION}
+{_CURRENCY_RULE}
+{_COO_RULE_DATE}
+{NUMERIC_RULE}
+"""
+
 
 CUSTOM_BASE_PROMPT = """You are a flexible document extraction assistant. \
 Your primary directive is to follow the user's custom prompt below.
@@ -222,6 +260,30 @@ INVOICE_SCHEMA = """{
   "remark": ""
 }"""
 
+INV_COO_SCHEMA = """{
+  "invoice_number": "string | null",
+  "invoice_date": "string (DD-MM-YYYY or as written) | null",
+  "form": "string | null",
+  "table": [
+    {
+      "no": "string | null",
+      "kategori_barang": "string | null",
+      "model": "string | null",
+      "quantity_ctns": "string | null",
+      "quantity_pcs": "string | null",
+      "unit_price": "string | null",
+      "amount_usd": "string | null",
+      "bruto": "string | null",
+      "netto": "string | null"
+    }
+  ],
+  "total_amount": "string | null",
+  "total_weight_bruto": "string | null",
+  "total_weight_netto": "string | null",
+  "total_quantity_ctns": "string | null",
+  "total_quantity_pcs": "string | null"
+}"""
+
 QUOTATION_SCHEMA = """{
   "quotation_number": "",
   "quotation_date": "",
@@ -286,17 +348,13 @@ BL_SCHEMA = """{
   "document_no": "string | null",
   "document_date": "string | null",
   "ship_date": "string | null",
-  "consignee": "string | null"
+  "consignee": "string | null",
+  "country_of_destination": "string | null"
 }"""
 
 PEB_SCHEMA = """{
   "nomor_pendaftaran": "string | null",
   "tanggal_pendaftaran": "string | null",
-  "pelabuhan_muat": "string | null",
-  "pelabuhan_bongkar": "string | null",
-  "country_of_destination": "string | null",
-  "nilai_transaksi": "string | null",
-  "form": "string | null"
 }"""
 
 PL_SCHEMA = """{
@@ -318,9 +376,27 @@ COO_SCHEMA = """{
   "date_peb": "string | null",
   "document_no_pl": "string | null",
   "date_pl": "string | null",
-  "total_amount": "string | null",
   "ship_date": "string | null",
-  "country_of_destination": "string | null"
+  "country_of_destination": "string | null",
+  "form": "string | null",
+  "table": [
+    {
+      "no": "string | null",
+      "kategori_barang": "string | null",
+      "model": "string | null",
+      "quantity_ctns": "string | null",
+      "quantity_pcs": "string | null",
+      "unit_price": "string | null",
+      "amount_usd": "string | null",
+      "bruto": "string | null",
+      "netto": "string | null"
+    }
+  ],
+  "total_amount": "string | null",
+  "total_weight_bruto": "string | null",
+  "total_weight_netto": "string | null",
+  "total_quantity_ctns": "string | null",
+  "total_quantity_pcs": "string | null"
 }"""
 
 DOCUMENT_SCHEMAS = {
@@ -423,8 +499,20 @@ EXPECTED SCHEMA:
     "COO": f"""
 EXPECTED SCHEMA:
 {COO_SCHEMA}
-CONFLICT RESOLUTION:
+CONSOLIDATION & KEY MAPPING RULES:
 - Consolidate data from B/L, PEB, PL, and Invoice pages.
+- Map the sub-document fields to the final COO_SCHEMA keys as follows:
+  * From Bill of Lading (B/L):
+    - Map B/L `document_no` to `document_no_bl`
+    - Map B/L `document_date` to `date_bl`
+  * From PEB (Pemberitahuan Ekspor Barang):
+    - Map PEB `nomor_pendaftaran` to `document_no_peb`
+    - Map PEB `tanggal_pendaftaran` to `date_peb`
+  * From Packing List (PL):
+    - Map PL `no` to `document_no_pl`
+    - Map PL `date` to `date_pl`
+  * From Invoice:
+    - Map Invoice `invoice_number` to `invoice_no`
 - In case of conflict, prefer `total_amount` from the PEB page (nilai_transaksi).
 - In case of conflict, prefer `receiving_company` (consignee) from the B/L page.
 """
