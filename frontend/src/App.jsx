@@ -2,9 +2,14 @@ import React, { useState, useEffect } from "react";
 import toast, { Toaster } from "react-hot-toast";
 
 import HealthIndicator from "./components/HealthIndicator";
-import ConfigPanel from "./components/ConfigPanel";
-import DocumentPreviewer from "./components/DocumentPreviewer";
-import ResultViewer from "./components/ResultViewer";
+import Sidebar from "./components/Sidebar";
+import TopBar from "./components/TopBar";
+import Dashboard from "./components/Dashboard";
+import Stepper from "./components/Stepper";
+import DokumenExtractor from "./components/DokumenExtractor";
+import CooExtractor from "./components/CooExtractor";
+import BatchExtractor from "./components/BatchExtractor";
+import CustomPromptExtractor from "./components/CustomPromptExtractor";
 import { startGuidedTour } from "./components/GuidedTour";
 import { processBatch } from "./utils/batchProcessor";
 import {
@@ -15,18 +20,23 @@ import {
 export default function App() {
   const baseUrl = "http://localhost:5030";
 
+  // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt"
+  const [activePage, setActivePage] = useState("dashboard");
+
   // App States
-  const [activeMode, setActiveMode] = useState("doc-type"); // doc-type, fields, custom-prompt
   const [isServiceReady, setIsServiceReady] = useState(true);
   const [theme, setTheme] = useState("light");
 
   // Config States
   const [docTypes, setDocTypes] = useState([]);
   const [selectedDocType, setSelectedDocType] = useState("");
+  const [activeMode, setActiveMode] = useState("doc-type"); // doc-type, fields
   const [fieldsList, setFieldsList] = useState(["nomor_faktur", "tanggal_transaksi", "total_harga"]);
+  const [pageSelectionText, setPageSelectionText] = useState("");
   const [customPrompt, setCustomPrompt] = useState(
     "Ekstrak semua informasi faktur termasuk tabel item barang, vendor, total harga sebelum dan sesudah pajak."
   );
+  const [concurrencyLimit, setConcurrencyLimit] = useState(3);
 
   // File & Preview States
   const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -34,7 +44,7 @@ export default function App() {
 
   // Processing & Results
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progressInfo, setProgressInfo] = useState(null); // { current, total, filename, percentage }
+  const [progressInfo, setProgressInfo] = useState(null);
   const [ocrResult, setOcrResult] = useState(null);
 
   // Local Directory Handles
@@ -125,7 +135,6 @@ export default function App() {
     const fileArray = Array.from(filesListToValidate);
     if (fileArray.length === 0) return;
 
-    // Check for multiple PDFs or mixed PDF + Image
     const pdfFiles = fileArray.filter(
       (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)
     );
@@ -133,33 +142,51 @@ export default function App() {
       (f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|tiff)$/i.test(f.name)
     );
 
-    if (pdfFiles.length > 0 && imageFiles.length > 0) {
+    const isPdf = pdfFiles.length > 0;
+    const isImg = imageFiles.length > 0;
+
+    if (isPdf && isImg) {
       toast.error("Tidak boleh mencampur PDF dan gambar dalam satu unggahan");
       return;
     }
 
-    if (pdfFiles.length > 0) {
-      if (pdfFiles.length > 20) {
-        toast.error("Maksimal mengunggah 20 berkas PDF sekaligus");
+    if (!isPdf && !isImg) {
+      toast.error("Format file tidak didukung. Harap unggah PDF atau Gambar.");
+      return;
+    }
+
+    if (activePage === "coo") {
+      if (fileArray.length > 4) {
+        toast.error("Maksimal mengunggah 4 berkas untuk COO.");
         return;
       }
-      setUploadedFiles(pdfFiles);
+      setUploadedFiles(fileArray);
       setOcrResult(null);
-      if (pdfFiles.length === 1) {
-        toast.success("Berhasil mengunggah berkas PDF");
-      } else {
-        toast.success(`Berhasil mengunggah ${pdfFiles.length} berkas PDF`);
-      }
-    } else if (imageFiles.length > 0) {
-      if (imageFiles.length > 20) {
-        toast.error("Maksimal mengunggah 20 gambar sekaligus");
+      setSelectedPages([]);
+      toast.success(`Berhasil mengunggah ${fileArray.length} berkas COO.`);
+    } else if (activePage === "batch") {
+      if (fileArray.length > 50) {
+        toast.error("Maksimal mengunggah 50 berkas sekaligus.");
         return;
       }
-      setUploadedFiles(imageFiles);
+      setUploadedFiles(fileArray);
       setOcrResult(null);
-      toast.success(`Berhasil mengunggah ${imageFiles.length} gambar`);
+      setSelectedPages([]);
+      toast.success(`Berhasil mengunggah ${fileArray.length} berkas batch.`);
     } else {
-      toast.error("Format file tidak didukung. Harap unggah PDF atau gambar.");
+      // activePage === "dokumen" or "prompt"
+      if (fileArray.length > 20) {
+        toast.error("Maksimal mengunggah 20 berkas sekaligus.");
+        return;
+      }
+      setUploadedFiles(fileArray);
+      setOcrResult(null);
+      setSelectedPages([]);
+      if (fileArray.length === 1) {
+        toast.success(`Berhasil mengunggah ${fileArray[0].name}`);
+      } else {
+        toast.success(`Berhasil mengunggah ${fileArray.length} berkas.`);
+      }
     }
   };
 
@@ -176,7 +203,6 @@ export default function App() {
     validateAndSetFiles(e.dataTransfer.files);
   };
 
-  // Mapping backend errors to friendly Indonesian descriptions
   const mapBackendError = (errType, errMsg = "") => {
     const mappings = {
       llm_bad_request: "Input terlalu panjang, coba kurangi ukuran file atau halaman",
@@ -216,27 +242,86 @@ export default function App() {
     setIsProcessing(true);
     setOcrResult(null);
 
-    const isPdf = uploadedFiles[0].type === "application/pdf" || /\.pdf$/i.test(uploadedFiles[0].name);
+    const pagesString = pageSelectionText || (selectedPages.length > 0 ? selectedPages.join(",") : "");
 
-    // Build params based on active mode
-    let endpoint = "";
-    let params = {};
+    // Run as batch if active page is batch, or if multiple files are uploaded (except COO which processes multiple files in a single request)
+    const runAsBatch = activePage === "batch" || (uploadedFiles.length > 1 && activePage !== "coo");
 
-    if (activeMode === "doc-type") {
-      endpoint = "/ocr/process/document";
-      params = { document_type: selectedDocType };
-    } else if (activeMode === "fields") {
-      endpoint = "/ocr/process/fields";
-      params = { fields: fieldsList };
-    } else if (activeMode === "custom-prompt") {
-      endpoint = "/ocr/process/prompt";
-      params = { custom_prompt: customPrompt };
-    }
+    if (runAsBatch) {
+      let endpoint = "";
+      let params = {};
 
-    const isCooMode = activeMode === "doc-type" && selectedDocType === "COO";
+      if (activePage === "batch" || activePage === "dokumen") {
+        if (activeMode === "fields") {
+          endpoint = "/ocr/process/fields";
+          params = { fields: fieldsList, pages: pagesString };
+        } else if (activeMode === "prompt") {
+          endpoint = "/ocr/process/prompt";
+          params = { custom_prompt: customPrompt, pages: pagesString };
+        } else {
+          endpoint = "/ocr/process/document";
+          params = { document_type: selectedDocType, pages: pagesString };
+        }
+      } else if (activePage === "prompt") {
+        endpoint = "/ocr/process/prompt";
+        params = { custom_prompt: customPrompt, pages: pagesString };
+      }
 
-    // PDF processing logic for a single PDF or COO mode
-    if ((uploadedFiles.length === 1 && isPdf) || isCooMode) {
+      const handleProgress = (prog) => {
+        setProgressInfo(prog);
+      };
+
+      try {
+        const result = await processBatch({
+          files: uploadedFiles,
+          endpoint,
+          params,
+          baseUrl,
+          concurrencyLimit,
+          onProgress: handleProgress,
+          mapError: mapBackendError,
+        });
+
+        setOcrResult(result);
+
+        if (result.batch_summary.failed_files > 0) {
+          toast.error(
+            `${result.batch_summary.failed_files} berkas gagal diproses.`,
+            { duration: 6000 }
+          );
+        } else {
+          toast.success(`Semua berkas dalam batch (${uploadedFiles.length} berkas) berhasil diproses!`);
+        }
+      } catch (err) {
+        toast.error("Terjadi kegagalan saat memproses batch berkas.");
+      } finally {
+        setIsProcessing(false);
+        setProgressInfo(null);
+      }
+    } else {
+      const isCooMode = activePage === "coo";
+      let endpoint = "";
+      let params = {};
+
+      if (activePage === "dokumen" || activePage === "batch") {
+        if (activeMode === "fields") {
+          endpoint = "/ocr/process/fields";
+          params = { fields: fieldsList, pages: pagesString };
+        } else if (activeMode === "prompt") {
+          endpoint = "/ocr/process/prompt";
+          params = { custom_prompt: customPrompt, pages: pagesString };
+        } else {
+          endpoint = "/ocr/process/document";
+          params = { document_type: selectedDocType, pages: pagesString };
+        }
+      } else if (activePage === "coo") {
+        endpoint = "/ocr/process/document";
+        params = { document_type: "COO", pages: pagesString };
+      } else if (activePage === "prompt") {
+        endpoint = "/ocr/process/prompt";
+        params = { custom_prompt: customPrompt, pages: pagesString };
+      }
+
       setProgressInfo({
         current: 1,
         total: 1,
@@ -244,23 +329,17 @@ export default function App() {
         percentage: 0,
       });
 
-      // Format page filter string
-      // Only send page selection for Fields and Custom Prompt
-      const pagesString =
-        activeMode !== "doc-type" && selectedPages.length > 0
-          ? selectedPages.join(",")
-          : "";
-      params.pages = pagesString;
-
       const formData = new FormData();
       uploadedFiles.forEach((file) => {
         formData.append("files", file);
       });
       Object.entries(params).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          value.forEach((v) => formData.append(key, v));
-        } else {
-          formData.append(key, value);
+        if (value !== undefined && value !== null) {
+          if (Array.isArray(value)) {
+            value.forEach((v) => formData.append(key, v));
+          } else {
+            formData.append(key, value);
+          }
         }
       });
 
@@ -274,12 +353,10 @@ export default function App() {
           const errData = await response.json();
           const errType = errData?.detail?.error_type || errData?.error_type;
           const errMsg = errData?.detail?.message || errData?.message;
-          // console.log(errType, errMsg);
           throw new Error(mapBackendError(errType, errMsg));
         }
 
         const data = await response.json();
-        // console.log(data)
         setProgressInfo({
           current: 1,
           total: 1,
@@ -287,42 +364,9 @@ export default function App() {
           percentage: 100,
         });
         setOcrResult(data);
-        toast.success(isCooMode ? "Ekstraksi berkas COO berhasil diselesaikan!" : "Ekstraksi PDF berhasil diselesaikan!");
+        toast.success(isCooMode ? "Ekstraksi berkas COO berhasil diselesaikan!" : "Ekstraksi berhasil diselesaikan!");
       } catch (err) {
         toast.error(err.message);
-      } finally {
-        setIsProcessing(false);
-        setProgressInfo(null);
-      }
-    } else {
-      // Batch processing logic (multiple PDFs or images)
-      // Progress handler
-      const handleProgress = (prog) => {
-        setProgressInfo(prog);
-      };
-
-      try {
-        const result = await processBatch({
-          files: uploadedFiles,
-          endpoint,
-          params,
-          baseUrl,
-          onProgress: handleProgress,
-          mapError: mapBackendError,
-        });
-
-        setOcrResult(result);
-
-        if (result.batch_summary.failed_files > 0) {
-          toast.error(
-            `${result.batch_summary.failed_files} berkas gagal diproses: ${result.batch_summary.failures.join(", ")}`,
-            { duration: 6000 }
-          );
-        } else {
-          toast.success(`Semua berkas dalam batch (${uploadedFiles.length} berkas) berhasil diproses!`);
-        }
-      } catch (err) {
-        toast.error("Terjadi kegagalan saat memproses batch berkas.");
       } finally {
         setIsProcessing(false);
         setProgressInfo(null);
@@ -330,248 +374,212 @@ export default function App() {
     }
   };
 
-  const isPdfFile = uploadedFiles.length > 0 && (uploadedFiles[0].type === "application/pdf" || /\.pdf$/i.test(uploadedFiles[0].name));
+  const handlePageChange = (newPage) => {
+    setActivePage(newPage);
+    setUploadedFiles([]);
+    setOcrResult(null);
+    setSelectedPages([]);
+    setIsProcessing(false);
+    setProgressInfo(null);
+    setPageSelectionText("");
+  };
+
+  const handleSupportTagClick = (tag) => {
+    const matched = docTypes.find(t => t.toLowerCase() === tag.toLowerCase());
+    if (matched) {
+      setSelectedDocType(matched);
+      toast.success(`Tipe dokumen diset ke: ${matched}`);
+    } else {
+      if (tag.toLowerCase() === "dll.") {
+        toast("Silakan pilih tipe dokumen di menu konfigurasi.");
+      } else {
+        toast.error(`Tipe dokumen ${tag} tidak didukung.`);
+      }
+    }
+  };
+
+  const handlePromptExampleClick = (ex) => {
+    setCustomPrompt(ex.value);
+    toast.success("Prompt contoh berhasil diterapkan!");
+  };
+
+  // Steps Calculator
+  const getStepperStep = () => {
+    if (activePage === "batch") {
+      if (ocrResult) return 4;
+      if (isProcessing) return 3;
+      if (uploadedFiles.length > 0) return 2;
+      return 1;
+    } else {
+      if (ocrResult) return 3;
+      if (isProcessing) return 3; // Show Step 3 (Hasil/Progress View) when processing
+      if (uploadedFiles.length > 0) return 2;
+      return 1;
+    }
+  };
+
+  // Click handler to go back to previous steps
+  const handleStepClick = (targetStep) => {
+    const currentStep = getStepperStep();
+    if (targetStep >= currentStep) return;
+
+    if (targetStep === 1) {
+      setUploadedFiles([]);
+      setOcrResult(null);
+      setIsProcessing(false);
+      setProgressInfo(null);
+      setSelectedPages([]);
+      setPageSelectionText("");
+    } else if (targetStep === 2) {
+      if (uploadedFiles.length > 0) {
+        setOcrResult(null);
+        setIsProcessing(false);
+        setProgressInfo(null);
+      }
+    } else if (targetStep === 3 && activePage === "batch") {
+      if (uploadedFiles.length > 0 && !isProcessing) {
+        handleRunOcr();
+      }
+    }
+  };
+
+  // Helper page title/desc
+  const getPageInfo = () => {
+    switch (activePage) {
+      case "dashboard":
+        return { title: "Ekstraksi Dokumen", desc: "Pilih fitur yang sesuai dengan kebutuhan Anda" };
+      case "dokumen":
+        return { title: "Ekstraksi Dokumen", desc: "Ekstrak data dari dokumen tunggal seperti KTP, NPWP, Invoice, dan lainnya." };
+      case "coo":
+        return { title: "Ekstraksi COO (Multi-Doc)", desc: "Ekstrak data COO dari 4 dokumen: BL, PEB, PL, dan Invoice COO." };
+      case "batch":
+        return { title: "Batch Processing", desc: "Proses banyak dokumen sekaligus dan gabungkan hasilnya dalam satu file." };
+      case "prompt":
+        return { title: "Custom Prompt", desc: "Ekstraksi bebas menggunakan prompt kustom sesuai kebutuhan Anda." };
+      default:
+        return { title: "Edge AI OCR", desc: "Local AI Document Extraction" };
+    }
+  };
+
+  const pageInfo = getPageInfo();
+
+  const handleStartGuidedTour = () => {
+    startGuidedTour({
+      setActivePage,
+      setUploadedFiles,
+      setOcrResult,
+    });
+  };
+
+  // Props bundles for action pages
+  const sharedProps = {
+    currentStep: getStepperStep(),
+    uploadedFiles,
+    setUploadedFiles,
+    pageSelectionText,
+    setPageSelectionText,
+    isServiceReady,
+    handleRunOcr,
+    handleFileChange,
+    selectedPages,
+    setSelectedPages,
+    ocrResult,
+    setOcrResult,
+    directoryHandle,
+    onSelectDirectory: handleSelectDirectory,
+    isProcessing,
+    progressInfo,
+    handleDragOver,
+    handleDrop,
+    activeMode,
+    setActiveMode,
+    fieldsList,
+    setFieldsList,
+    customPrompt,
+    setCustomPrompt,
+  };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-surface dark:bg-on-background font-body-main text-on-surface dark:text-on-primary transition-colors duration-300">
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080d1a] font-body-main text-slate-900 dark:text-slate-100 transition-colors duration-300">
       <Toaster position="top-right" reverseOrder={false} />
+      <div className="hidden">
+        <HealthIndicator baseUrl={baseUrl} onStatusChange={setIsServiceReady} />
+      </div>
 
-      {/* TopNavBar */}
-      <header className="fixed top-0 left-0 w-full h-16 z-50 flex justify-between items-center px-gutter bg-white dark:bg-inverse-surface border-b border-border-subtle dark:border-outline-variant transition-colors duration-300 shadow-sm">
-        <div className="flex items-center gap-4">
-          <span className="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">
-            Edge-AI-OCR
-          </span>
-          <HealthIndicator baseUrl={baseUrl} onStatusChange={setIsServiceReady} />
-        </div>
-        <div className="flex items-center gap-4">
-          {/* Theme Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="relative w-14 h-7 rounded-full bg-surface-container-high dark:bg-primary-container border border-outline-variant transition-colors duration-500 focus:outline-none overflow-hidden"
-            id="theme-toggle"
-            title="Ubah Tema"
-          >
-            <div
-              className={`absolute top-1 left-1 w-5 h-5 flex items-center justify-center transition-transform duration-500 ease-in-out pointer-events-none transform ${
-                theme === "dark" ? "translate-x-[28px]" : "translate-x-0"
-              }`}
-            >
-              {theme === "light" ? (
-                <span className="material-symbols-outlined text-orange-500 text-[18px] sun-icon">light_mode</span>
-              ) : (
-                <span className="material-symbols-outlined text-blue-300 text-[18px] moon-icon">dark_mode</span>
+      {/* Sidebar navigation */}
+      <Sidebar
+        activePage={activePage}
+        onPageChange={handlePageChange}
+        isServiceReady={isServiceReady}
+        startGuidedTour={handleStartGuidedTour}
+      />
+
+      {/* Main Content Area Wrapper */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Top Header Bar */}
+        <TopBar
+          pageTitle={pageInfo.title}
+          pageDesc={pageInfo.desc}
+          isServiceReady={isServiceReady}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          startGuidedTour={handleStartGuidedTour}
+        />
+
+        {/* Main View content */}
+        <main className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50 dark:bg-[#080d1a] transition-colors duration-300">
+          {activePage === "dashboard" ? (
+            <Dashboard 
+              onPageChange={handlePageChange}
+              startGuidedTour={handleStartGuidedTour}
+            />
+          ) : (
+            <div className="w-full space-y-6">
+              {/* Stepper Progress Indicator */}
+              <Stepper 
+                activePage={activePage}
+                currentStep={getStepperStep()}
+                onStepClick={handleStepClick}
+              />
+
+              {/* Action Pages Switches */}
+              {activePage === "dokumen" && (
+                <DokumenExtractor
+                  {...sharedProps}
+                  docTypes={docTypes}
+                  selectedDocType={selectedDocType}
+                  setSelectedDocType={setSelectedDocType}
+                  handleSupportTagClick={handleSupportTagClick}
+                />
+              )}
+
+              {activePage === "coo" && (
+                <CooExtractor
+                  {...sharedProps}
+                />
+              )}
+
+              {activePage === "batch" && (
+                <BatchExtractor
+                  {...sharedProps}
+                  docTypes={docTypes}
+                  selectedDocType={selectedDocType}
+                  setSelectedDocType={setSelectedDocType}
+                  concurrencyLimit={concurrencyLimit}
+                  setConcurrencyLimit={setConcurrencyLimit}
+                />
+              )}
+
+              {activePage === "prompt" && (
+                <CustomPromptExtractor
+                  {...sharedProps}
+                  customPrompt={customPrompt}
+                  setCustomPrompt={setCustomPrompt}
+                  handlePromptExampleClick={handlePromptExampleClick}
+                />
               )}
             </div>
-          </button>
-
-          {/* Panduan Button */}
-          <button
-            onClick={startGuidedTour}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/20 hover:text-primary dark:hover:text-primary-fixed-dim transition-all font-semibold text-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">help</span>
-            <span className="font-body-main">Panduan</span>
-          </button>
-
-          {/* Future Fiture: User info */}
-          {/* <div className="flex items-center gap-3 pl-4 border-l border-outline-variant dark:border-outline">
-            <div className="text-right hidden sm:block">
-              <p className="font-label-caps text-label-caps font-bold dark:text-on-primary leading-tight">Operator Utama</p>
-              <p className="text-[10px] text-on-surface-variant dark:text-surface-variant uppercase tracking-wider">Level 4 Access</p>
-            </div>
-            <img
-              alt="Profil Operator"
-              className="w-8 h-8 rounded-full border border-outline-variant bg-surface-container-low"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkhehBT5Hec_26IUmJnKED6XonTSn351j44MXU_QO69ljwmRnrMSUAExoAQKmJFoj44WH0UP-WAW1tiibSGdKNWftxu3F6Y9v3Yp-fMtwkE626sR5RKIwukF4hWFE_CICauJE-cG62TCNqSQiXcoRJjLVO8r63-QEEdTtfeXj94PVMFk4GBQoC0JPvk7QuzAn6z3voDMZOpZUoZk4DF99CBNbaG-XkGeuT6UsniX-t6xDIdNu2HGkZQkw7PBgtmqwpc96JBf3Vkc0F"
-            />
-          </div> */}
-        </div>
-      </header>
-
-      {/* Main Layout Body */}
-      <div className="flex pt-16 h-full overflow-hidden">
-
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-surface dark:bg-on-background transition-colors duration-300">
-          <div className="w-full max-w-none space-y-6">
-            {/* Centered Mode Selector */}
-            <section className="flex justify-center mb-6">
-              <div
-                className="bg-surface-container-low dark:bg-inverse-surface p-1 rounded-xl flex gap-1 border border-border-subtle dark:border-outline-variant transition-colors duration-300"
-                id="mode-selector-container"
-              >
-                {[
-                  { id: "doc-type", label: "Document Type" },
-                  { id: "fields", label: "Fields" },
-                  { id: "custom-prompt", label: "Custom Prompt" },
-                ].map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => {
-                      setActiveMode(mode.id);
-                      setOcrResult(null);
-                    }}
-                    className={`px-6 py-2 rounded-lg text-body-sm font-semibold transition-all ${
-                      activeMode === mode.id
-                        ? "bg-white dark:bg-secondary text-secondary dark:text-white shadow-sm"
-                        : "text-on-surface-variant dark:text-surface-variant hover:bg-white/50 dark:hover:bg-on-surface-variant/20"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <div className="grid grid-cols-12 gap-6 items-start">
-              {/* Left Column: Combined Config & Upload Card */}
-              <div className="col-span-12 lg:col-span-3 space-y-4">
-                <div className="bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant p-5 rounded-xl shadow-sm space-y-6 transition-colors duration-300">
-                  {/* Configuration Panel */}
-                  <ConfigPanel
-                    activeMode={activeMode}
-                    docTypes={docTypes}
-                    selectedDocType={selectedDocType}
-                    setSelectedDocType={setSelectedDocType}
-                    fieldsList={fieldsList}
-                    setFieldsList={setFieldsList}
-                    customPrompt={customPrompt}
-                    setCustomPrompt={setCustomPrompt}
-                    directoryHandle={directoryHandle}
-                    onSelectDirectory={handleSelectDirectory}
-                  />
-
-                  <hr className="border-border-subtle dark:border-outline-variant" />
-
-                  {/* Upload Zone */}
-                  {uploadedFiles.length === 0 ? (
-                    <div
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                      onClick={() => document.getElementById("file-input").click()}
-                      className="border-2 border-dashed border-outline-variant dark:border-outline p-6 rounded-xl flex flex-col items-center justify-center text-center group hover:border-secondary dark:hover:border-primary transition-all cursor-pointer relative overflow-hidden bg-surface-ice/30 dark:bg-transparent"
-                      id="upload-zone-container"
-                    >
-                      <input
-                        type="file"
-                        id="file-input"
-                        multiple
-                        accept=".pdf, image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                      <div className="w-12 h-12 bg-secondary/10 dark:bg-secondary/20 rounded-full flex items-center justify-center text-secondary dark:text-primary-fixed-dim mb-3 group-hover:scale-110 transition-transform">
-                        <span className="material-symbols-outlined text-[28px]">upload_file</span>
-                      </div>
-                      <h4 className="font-headline-md text-[16px] text-primary dark:text-primary-fixed-dim mb-1 font-bold">
-                        Unggah Dokumen
-                      </h4>
-                      <p className="text-[11px] text-on-surface-variant dark:text-surface-variant mb-3">
-                        Tarik & lepas PDF/Gambar di sini
-                      </p>
-                      <button className="bg-secondary dark:bg-primary-container text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary-container dark:hover:bg-primary transition-colors">
-                        Pilih File
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                      className="border border-solid border-outline-variant dark:border-outline p-5 rounded-xl bg-surface-ice/30 dark:bg-on-surface-variant/5 transition-all relative overflow-hidden"
-                      id="upload-zone-container"
-                    >
-                      <div className="flex items-center gap-3 mb-4 min-w-0">
-                        <div className="w-10 h-10 bg-secondary/10 dark:bg-secondary/20 rounded-lg flex items-center justify-center text-secondary dark:text-primary-fixed-dim shrink-0">
-                          <span className="material-symbols-outlined text-[24px]">
-                            {uploadedFiles[0].type === "application/pdf" || /\.pdf$/i.test(uploadedFiles[0].name) ? "picture_as_pdf" : "image"}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h5 className="text-body-sm font-bold text-primary dark:text-primary-fixed-dim truncate" title={uploadedFiles.length === 1 ? uploadedFiles[0].name : `${uploadedFiles.length} ${isPdfFile ? "PDF" : "Gambar"} terpilih`}>
-                            {uploadedFiles.length === 1 ? uploadedFiles[0].name : `${uploadedFiles.length} ${isPdfFile ? "PDF" : "Gambar"} terpilih`}
-                          </h5>
-                          <p className="text-[10px] text-on-surface-variant dark:text-surface-variant truncate">
-                            {uploadedFiles.length === 1 
-                              ? `${(uploadedFiles[0].size / 1024).toFixed(1)} KB` 
-                              : `${(uploadedFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(1)} KB (Total)`
-                            }
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => document.getElementById("file-input").click()}
-                          className="flex-1 flex items-center justify-center gap-1.5 border border-outline-variant dark:border-outline hover:border-secondary hover:text-secondary dark:hover:border-primary-fixed-dim text-on-surface-variant dark:text-surface-variant font-semibold py-1.5 px-3 rounded-lg text-xs transition-all cursor-pointer bg-white dark:bg-on-background shadow-sm"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">cached</span>
-                          Ganti File
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUploadedFiles([]);
-                            setOcrResult(null);
-                          }}
-                          className="flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 font-semibold py-1.5 px-3 rounded-lg text-xs transition-all cursor-pointer border border-red-200 dark:border-red-900/50 shadow-sm"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
-                          Hapus
-                        </button>
-                      </div>
-                      
-                      <input
-                        type="file"
-                        id="file-input"
-                        multiple
-                        accept=".pdf, image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* OCR Execution Button (for non-empty preview) */}
-                {uploadedFiles.length > 0 && !isProcessing && (
-                  <button
-                    onClick={handleRunOcr}
-                    disabled={!isServiceReady}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-secondary dark:bg-secondary-container disabled:bg-gray-300 disabled:dark:bg-outline-variant disabled:cursor-not-allowed text-white rounded-lg font-semibold hover:bg-primary-container transition-colors shadow-md text-sm cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">play_arrow</span>
-                    Jalankan OCR
-                  </button>
-                )}
-              </div>
-
-              {/* Center Column: Preview & OCR Trigger */}
-              <div className="col-span-12 lg:col-span-6 space-y-4" id="document-previewer-container" >
-                <DocumentPreviewer
-                  files={uploadedFiles}
-                  selectedPages={selectedPages}
-                  onPagesChange={setSelectedPages}
-                  showPageSelector={activeMode !== "doc-type"}
-                />
-              </div>
-
-              {/* Right Column: Results Viewer */}
-              <div className="col-span-12 lg:col-span-3" id="ocr-results-container">
-                <ResultViewer
-                  ocrResult={ocrResult}
-                  activeMode={activeMode}
-                  selectedDocType={selectedDocType}
-                  directoryHandle={directoryHandle}
-                  uploadedFiles={uploadedFiles}
-                  isProcessing={isProcessing}
-                  progressInfo={progressInfo}
-                />
-              </div>
-            </div>
-          </div>
+          )}
         </main>
       </div>
     </div>

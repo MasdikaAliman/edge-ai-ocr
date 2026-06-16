@@ -171,26 +171,28 @@ export default function DocumentPreviewer({
       id="document-previewer-container"
     >
       {/* Top Header Controls */}
-      <div className="px-6 py-3 border-b border-border-subtle dark:border-outline-variant flex items-center justify-between bg-surface-ice dark:bg-on-surface-variant/5">
-        <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-on-surface-variant dark:text-surface-variant">visibility</span>
-          <span className="font-label-caps text-label-caps font-bold dark:text-on-primary select-none truncate max-w-[250px] md:max-w-[400px]">
+      <div className="px-6 py-3 border-b border-border-subtle dark:border-outline-variant flex items-center justify-between bg-surface-ice dark:bg-on-surface-variant/5 gap-4">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <span className="material-symbols-outlined text-on-surface-variant dark:text-surface-variant flex-shrink-0">visibility</span>
+          <span className="font-label-caps text-label-caps font-bold dark:text-on-primary select-none truncate">
             Pratinjau: {fileType === "pdf" ? files[activePdfIndex]?.name || files[0].name : files[activeImageIndex]?.name || "Gambar"}
           </span>
         </div>
-        <div className="flex items-center gap-2 bg-white dark:bg-on-background rounded-lg p-1 border border-outline-variant dark:border-outline shadow-sm">
+        <div className="flex items-center gap-2 bg-white dark:bg-on-background rounded-lg p-1 border border-outline-variant dark:border-outline shadow-sm flex-shrink-0">
           <button
             onClick={handleZoomOut}
             className="material-symbols-outlined p-1 hover:bg-surface-container dark:hover:bg-on-surface-variant/20 text-on-surface-variant dark:text-surface-variant rounded transition-all text-[18px]"
+            title="Zoom Out"
           >
             zoom_out
           </button>
-          <span className="text-body-sm px-2 border-x border-outline-variant dark:border-outline dark:text-on-primary font-semibold select-none">
+          <span className="text-body-sm px-2 border-x border-outline-variant dark:border-outline dark:text-on-primary font-semibold select-none min-w-[45px] text-center">
             {zoom}%
           </span>
           <button
             onClick={handleZoomIn}
             className="material-symbols-outlined p-1 hover:bg-surface-container dark:hover:bg-on-surface-variant/20 text-on-surface-variant dark:text-surface-variant rounded transition-all text-[18px]"
+            title="Zoom In"
           >
             zoom_in
           </button>
@@ -198,22 +200,27 @@ export default function DocumentPreviewer({
       </div>
 
       {/* Main Canvas / Image Render Area */}
-      <div className="flex-1 overflow-auto p-4 flex items-start justify-center bg-surface-container-lowest/30 dark:bg-on-background/30 custom-scrollbar">
+      <div className="flex-1 overflow-auto p-4 flex bg-surface-container-lowest/30 dark:bg-on-background/30 custom-scrollbar preview-container">
         {fileType === "pdf" ? (
-          <div className="my-auto">
-            <canvas ref={canvasRef} className="shadow-lg bg-white max-w-full rounded border border-outline-variant/30" />
+          <div className="m-auto">
+            <canvas
+              ref={canvasRef}
+              className={`preview-canvas ${
+                zoom <= 100 ? "max-w-full" : "max-w-none"
+              }`}
+            />
           </div>
         ) : (
-          <div className="my-auto flex justify-center items-center h-full w-full">
+          <div className="m-auto flex justify-center items-center">
             {imageUrls[activeImageIndex] && (
               <img
                 src={imageUrls[activeImageIndex]}
                 alt="Document Preview"
-                className="shadow-lg bg-white rounded object-contain transition-all border border-outline-variant/30 max-h-full max-w-full"
+                className={`preview-image ${
+                  zoom <= 100 ? "max-w-full max-h-full" : "max-w-none max-h-none"
+                }`}
                 style={{
-                  width: "auto",
-                  transform: `scale(${zoom / 100})`,
-                  transformOrigin: "center center",
+                  width: `${zoom}%`,
                 }}
               />
             )}

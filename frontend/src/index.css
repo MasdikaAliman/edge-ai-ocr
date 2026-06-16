@@ -34,7 +34,36 @@
   backdrop-filter: blur(8px);
 }
 
-/* Theme toggle animations */
 .sun-icon, .moon-icon {
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Consolidated Element Utilities */
+@utility preview-container {
+  min-height: 0;
+}
+
+@utility preview-canvas {
+  @apply shadow-lg bg-white rounded border border-outline-variant/30 h-auto;
+}
+
+@utility preview-image {
+  @apply shadow-lg bg-white rounded border border-outline-variant/30 object-contain h-auto;
+}
+
+@utility progress-track {
+  @apply w-full bg-slate-100 dark:bg-slate-950 h-2 rounded-full overflow-hidden;
+}
+
+@utility progress-bar-purple {
+  @apply bg-purple-600 h-full rounded-full transition-all duration-300;
+}
+
+@utility progress-track-result {
+  @apply w-full bg-surface-container-highest dark:bg-on-surface-variant/20 h-2.5 rounded-full overflow-hidden shadow-inner;
+}
+
+@utility progress-bar-result {
+  @apply bg-gradient-to-r from-secondary to-blue-500 h-full rounded-full transition-all duration-300 ease-out;
+}
+

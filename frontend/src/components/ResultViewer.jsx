@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { exportToExcel, getExcelBlob, getCooExcelBlob, exportCooToExcelTemplate } from "../utils/excelExporter";
 import { saveBlobToDirectory } from "../utils/fileSystem";
@@ -35,6 +35,7 @@ function getHighlightedJson(jsonObj) {
 
 export default function ResultViewer({ 
   ocrResult, 
+  setOcrResult,
   activeMode, 
   selectedDocType, 
   directoryHandle, 
@@ -43,6 +44,16 @@ export default function ResultViewer({
   progressInfo
 }) {
   const [customFilename, setCustomFilename] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [jsonText, setJsonText] = useState("");
+  const [jsonError, setJsonError] = useState(null);
+
+  // Sync editor when ocrResult changes from external source
+  useEffect(() => {
+    if (ocrResult) {
+      setJsonText(JSON.stringify(ocrResult, null, 2));
+    }
+  }, [ocrResult]);
 
   if (isProcessing) {
     const current = progressInfo?.current || 0;
@@ -76,9 +87,9 @@ export default function ResultViewer({
               <span>Progres Ekstraksi</span>
               <span>{percentage}%</span>
             </div>
-            <div className="w-full bg-surface-container-highest dark:bg-on-surface-variant/20 h-2.5 rounded-full overflow-hidden shadow-inner">
+            <div className="progress-track-result">
               <div
-                className="bg-gradient-to-r from-secondary to-blue-500 h-full rounded-full transition-all duration-300 ease-out"
+                className="progress-bar-result"
                 style={{ width: `${percentage}%` }}
               ></div>
             </div>
@@ -196,8 +207,44 @@ export default function ResultViewer({
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => {
+              if (isEditing) {
+                try {
+                  const parsed = JSON.parse(jsonText);
+                  if (setOcrResult) {
+                    setOcrResult(parsed);
+                  }
+                  setIsEditing(false);
+                  setJsonError(null);
+                  toast.success("Perubahan JSON berhasil disimpan.");
+                } catch (err) {
+                  setJsonError(err.message);
+                  toast.error("Format JSON tidak valid!");
+                }
+              } else {
+                setJsonText(JSON.stringify(ocrResult, null, 2));
+                setIsEditing(true);
+                setJsonError(null);
+              }
+            }}
+            className={`px-4 py-1.5 rounded-lg text-body-sm font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer ${
+              isEditing
+                ? "bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/20"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {isEditing ? "check" : "edit"}
+            </span>
+            {isEditing ? "Simpan" : "Edit Hasil"}
+          </button>
+          <button
             onClick={handleDownloadJson}
-            className="bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-surface-container dark:hover:bg-on-surface-variant/20 transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+            disabled={isEditing}
+            className={`bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-surface-container dark:hover:bg-on-surface-variant/20 transition-all flex items-center gap-2 shadow-sm ${
+              isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+            }`}
+            title={isEditing ? "Selesaikan pengeditan untuk mengunduh" : "Unduh JSON"}
           >
             <span className="material-symbols-outlined text-[18px]">
               {directoryHandle ? "save" : "download"}
@@ -206,7 +253,11 @@ export default function ResultViewer({
           </button>
           <button
             onClick={handleDownloadExcel}
-            className="bg-service-ready/10 border border-service-ready text-service-ready px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-service-ready hover:text-white transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+            disabled={isEditing}
+            className={`bg-service-ready/10 border border-service-ready text-service-ready px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-service-ready hover:text-white transition-all flex items-center gap-2 shadow-sm ${
+              isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+            }`}
+            title={isEditing ? "Selesaikan pengeditan untuk mengunduh" : "Unduh Excel"}
           >
             <span className="material-symbols-outlined text-[18px]">
               {directoryHandle ? "save" : "table_view"}
@@ -235,13 +286,37 @@ export default function ResultViewer({
           </button>
         )}
       </div>
-      <div className="p-6 bg-slate-900 font-data-mono text-data-mono overflow-auto flex-1 custom-scrollbar">
-
-        <pre
-          className="text-slate-300 whitespace-pre-wrap break-all"
-          dangerouslySetInnerHTML={{ __html: getHighlightedJson(ocrResult) }}
-        />
-      </div>
+      {isEditing ? (
+        <div className="p-6 bg-slate-950 flex flex-col flex-1 min-h-0">
+          {jsonError && (
+            <div className="mb-3 p-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs font-semibold flex items-center gap-2">
+              <span className="material-symbols-outlined text-[16px] text-red-400">error</span>
+              <span className="truncate text-[11px]">JSON tidak valid: {jsonError}</span>
+            </div>
+          )}
+          <textarea
+            value={jsonText}
+            onChange={(e) => {
+              setJsonText(e.target.value);
+              try {
+                JSON.parse(e.target.value);
+                setJsonError(null);
+              } catch (err) {
+                setJsonError(err.message);
+              }
+            }}
+            className="flex-1 w-full bg-slate-900 text-slate-200 font-data-mono text-data-mono p-4 rounded-xl border border-outline-variant/30 focus:outline-none focus:border-secondary dark:focus:border-primary-fixed focus:ring-1 focus:ring-secondary/20 transition-all resize-none custom-scrollbar"
+            placeholder="Sunting data JSON di sini..."
+          />
+        </div>
+      ) : (
+        <div className="p-6 bg-slate-900 font-data-mono text-data-mono overflow-auto flex-1 custom-scrollbar">
+          <pre
+            className="text-slate-300 whitespace-pre-wrap break-all"
+            dangerouslySetInnerHTML={{ __html: getHighlightedJson(ocrResult) }}
+          />
+        </div>
+      )}
     </div>
   );
 }
