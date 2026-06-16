@@ -223,13 +223,8 @@ export default function App() {
     let params = {};
 
     if (activeMode === "doc-type") {
-      if (selectedDocType === "COO") {
-        endpoint = "/ocr/process/coo";
-        params = {};
-      } else {
-        endpoint = "/ocr/process/document";
-        params = { document_type: selectedDocType };
-      }
+      endpoint = "/ocr/process/document";
+      params = { document_type: selectedDocType };
     } else if (activeMode === "fields") {
       endpoint = "/ocr/process/fields";
       params = { fields: fieldsList };

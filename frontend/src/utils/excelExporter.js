@@ -184,3 +184,157 @@ export function exportToExcel(ocrData, fileName) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  COO Template-Based Export
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fills the COO Excel template (public/coo_template.xlsx) with OCR result data
+ * and returns a Blob ready for download or directory save.
+ *
+ * Mapping:
+ *   "CREATE COO" sheet (column D):
+ *     D25  ← consignee
+ *     D33  ← vessel_voyage_no
+ *     D36  ← ship_date
+ *     D39  ← document_no_bl
+ *     D40  ← date_bl
+ *     D44  ← total_amount  (Value EWP USD)
+ *     D45  ← document_no_peb
+ *     D46  ← date_peb
+ *     D49  ← document_no_pl
+ *     D50  ← date_pl
+ *     D54  ← invoice_no
+ *     D55  ← invoice_date
+ *     D57  ← total_amount  (Total Invoice EWP USD)
+ *
+ *   "Sheet1" table (rows 2+, header row 1 preserved):
+ *     A=No, B=kategori_barang, C=model, D=quantity_ctns, E=quantity_pcs,
+ *     F=unit_price, G=amount_usd, H=bruto, I=netto
+ */
+export async function getCooExcelBlob(ocrResult) {
+  // 1. Fetch the template served from /public
+  const response = await fetch("/coo_template.xlsx");
+  if (!response.ok) {
+    throw new Error("Gagal memuat template COO. Pastikan file coo_template.xlsx ada di folder public.");
+  }
+  const arrayBuffer = await response.arrayBuffer();
+
+  // 2. Read workbook preserving styles
+  const wb = XLSX.read(new Uint8Array(arrayBuffer), {
+    type: "array",
+    cellStyles: true,
+    cellDates: true,
+  });
+
+  // 3. Extract OCR data
+  const data = ocrResult?.data || ocrResult || {};
+
+  // Helper: write a value into an existing cell while preserving its style
+  const writeCell = (ws, address, value, cellType) => {
+    const existing = ws[address] || {};
+    ws[address] = {
+      ...existing,          // keep style (s), any formula metadata, etc.
+      v: value,
+      t: cellType,
+      w: String(value ?? ""),
+    };
+  };
+
+  // Safely coerce to string (null/undefined → empty string)
+  const str = (v) => (v !== null && v !== undefined ? String(v) : "");
+
+  // Safely coerce to number (falls back to the raw value as string if not parseable)
+  const num = (v) => {
+    const n = parseFloat(v);
+    return isNaN(n) ? str(v) : n;
+  };
+
+  // 4. Fill "CREATE COO" sheet scalars
+  const cooSheet = wb.Sheets["CREATE COO"];
+  if (cooSheet) {
+    writeCell(cooSheet, "D25", str(data.consignee), "s");
+    writeCell(cooSheet, "D33", str(data.vessel_voyage_no), "s");
+    writeCell(cooSheet, "D36", str(data.ship_date), "s");
+    writeCell(cooSheet, "D39", str(data.document_no_bl), "s");
+    writeCell(cooSheet, "D40", str(data.date_bl), "s");
+    writeCell(cooSheet, "D44", num(data.total_amount), "n");
+    writeCell(cooSheet, "D45", str(data.document_no_peb), "s");
+    writeCell(cooSheet, "D46", str(data.date_peb), "s");
+    writeCell(cooSheet, "D49", str(data.document_no_pl), "s");
+    writeCell(cooSheet, "D50", str(data.date_pl), "s");
+    writeCell(cooSheet, "D54", str(data.invoice_no), "s");
+    writeCell(cooSheet, "D55", str(data.invoice_date), "s");
+    writeCell(cooSheet, "D57", num(data.total_amount), "n");
+  }
+
+  // 5. Fill "Sheet1" with table items
+  const sheet1 = wb.Sheets["Sheet1"];
+  if (sheet1 && Array.isArray(data.table) && data.table.length > 0) {
+    const tableItems = data.table;
+
+    // Clear existing sample data rows (rows 2+ in 1-indexed = r>=1 in 0-indexed)
+    // Row 1 header (r=0) and K1 formula are NOT touched.
+    const currentRange = XLSX.utils.decode_range(sheet1["!ref"] || "A1:K18");
+    for (let r = 1; r <= currentRange.e.r; r++) {
+      for (let c = currentRange.s.c; c <= currentRange.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        delete sheet1[addr];
+      }
+    }
+
+    // Write new rows from OCR table data
+    const safeNum = (v) => {
+      if (v === null || v === undefined || v === "") return 0;
+      const n = parseFloat(v);
+      return isNaN(n) ? v : n;
+    };
+    const safeStr = (v) => (v !== null && v !== undefined ? String(v) : "");
+
+    tableItems.forEach((item, idx) => {
+      const r = idx + 2; // Excel row (1-indexed), data starts at row 2
+      sheet1[`A${r}`] = { v: idx + 1,                        t: "n" };
+      sheet1[`B${r}`] = { v: safeStr(item.kategori_barang),  t: "s" };
+      sheet1[`C${r}`] = { v: safeStr(item.model),            t: "s" };
+      sheet1[`D${r}`] = { v: safeNum(item.quantity_ctns),    t: "n" };
+      sheet1[`E${r}`] = { v: safeNum(item.quantity_pcs),     t: "n" };
+      sheet1[`F${r}`] = { v: safeNum(item.unit_price),       t: "n" };
+      sheet1[`G${r}`] = { v: safeNum(item.amount_usd),       t: "n" };
+      sheet1[`H${r}`] = { v: safeNum(item.bruto),            t: "n" };
+      sheet1[`I${r}`] = { v: safeNum(item.netto),            t: "n" };
+    });
+
+    // Update sheet range to cover the new data extent (A1 : K{lastRow})
+    const lastDataRow = tableItems.length + 1; // +1 for header row
+    sheet1["!ref"] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: lastDataRow, c: 10 }, // columns A–K (0-indexed 0–10)
+    });
+  }
+
+  // 6. Serialize to Blob
+  const excelBuffer = XLSX.write(wb, {
+    bookType: "xlsx",
+    type: "array",
+    cellStyles: true,
+  });
+  return new Blob([excelBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+/**
+ * Fetches the COO template, fills it with OCR data, and triggers a browser download.
+ */
+export async function exportCooToExcelTemplate(ocrResult, fileName) {
+  const blob = await getCooExcelBlob(ocrResult);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

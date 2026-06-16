@@ -1,5 +1,5 @@
 import requests
-from typing import Annotated, List, Optional, Set
+from typing import Annotated, List, Optional, Set, Dict
 import re
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile as UF
@@ -171,15 +171,18 @@ async def process_ocr_document(
         ),
     ),
 ):
-    image_pages = await _process_files(files, pages=pages, document_type=document_type)
-    result = await run_ocr(document_type, image_pages, None, "")
-    create_call_log(
-        request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "pages": pages, "files": [f.filename for f in files]},
-        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
-        messages_sent=result.pop("messages_log", []),
-        output=result,
-    )
-    return result
+    if document_type == "COO":
+        return await process_ocr_coo_document(files, pages)
+    else:
+        image_pages = await _process_files(files, pages=pages, document_type=document_type)
+        result = await run_ocr(document_type, image_pages, None, "")
+        create_call_log(
+            request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "pages": pages, "files": [f.filename for f in files]},
+            pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
+            messages_sent=result.pop("messages_log", []),
+            output=result,
+        )
+        return result
 
 
 @app.post(
@@ -270,22 +273,10 @@ async def process_ocr_prompt(
         output=result,
     )
     return result
-@app.post(
-    "/ocr/process/coo",
-    summary="Extract fields from 4 Certificate of Origin (COO) files and merge",
-    tags=["OCR"],
-)
-async def process_ocr_coo(
-    files: List[UploadFile] = File(
-        ...,
-        description=(
-            "Upload exactly 4 PDF/Image files: one of each for BL, PEB, PL, and Invoice (INV)."
-        ),
-    ),
-    pages: str = Form(
-        "",
-        description="Optional page filter. If not specified, default heuristics will be applied for each document type.",
-    ),
+
+async def process_ocr_coo_document(
+    files: List[UploadFile],
+    pages: str 
 ):
     if len(files) > 4:
         raise HTTPException(
@@ -480,7 +471,6 @@ async def root():
         "supported_document_types": list(DOCUMENT_PROMPTS.keys()) + ["COO"],
         "endpoints": {
             "document_ocr": "POST /ocr/process/document",
-            "coo_ocr":      "POST /ocr/process/coo",
             "fields_ocr":   "POST /ocr/process/fields",
             "prompt_ocr":   "POST /ocr/process/prompt",
             "health":       "GET  /health",

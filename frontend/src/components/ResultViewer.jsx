@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import toast from "react-hot-toast";
-import { exportToExcel, getExcelBlob } from "../utils/excelExporter";
+import { exportToExcel, getExcelBlob, getCooExcelBlob, exportCooToExcelTemplate } from "../utils/excelExporter";
 import { saveBlobToDirectory } from "../utils/fileSystem";
 
 // Regex helper to format JSON with colors
@@ -161,7 +161,17 @@ export default function ResultViewer({
   const handleDownloadExcel = async () => {
     const filename = getExportFilename("xlsx");
     try {
-      if (directoryHandle) {
+      if (selectedDocType === "COO") {
+        // Use the official COO template with pre-mapped cells
+        if (directoryHandle) {
+          const blob = await getCooExcelBlob(ocrResult);
+          await saveBlobToDirectory(directoryHandle, filename, blob);
+          toast.success(`Excel COO template berhasil disimpan di folder: ${directoryHandle.name}`);
+        } else {
+          await exportCooToExcelTemplate(ocrResult, filename);
+          toast.success("Excel COO template berhasil diunduh.");
+        }
+      } else if (directoryHandle) {
         const blob = getExcelBlob(ocrResult);
         await saveBlobToDirectory(directoryHandle, filename, blob);
         toast.success(`Excel berhasil disimpan di folder: ${directoryHandle.name}`);
