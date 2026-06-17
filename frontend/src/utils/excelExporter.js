@@ -247,6 +247,9 @@ export async function getCooExcelBlob(ocrResult) {
 
   // Safely coerce to number (falls back to the raw value as string if not parseable)
   const num = (v) => {
+    if (typeof v === "string") {
+      v = v.replace(/,/g, "");
+    }
     const n = parseFloat(v);
     return isNaN(n) ? str(v) : n;
   };
@@ -254,8 +257,11 @@ export async function getCooExcelBlob(ocrResult) {
   // 4. Fill "CREATE COO" sheet scalars
   const cooSheet = wb.Sheets["CREATE COO"];
   if (cooSheet) {
+    writeCell(cooSheet, "D4", str(data.country_of_destination, "s"))
+    writeCell(cooSheet, "D6", str(data.form), "s")
+    const dikirim_oleh = str(data.vessel_voyage_no) + " / " + str(data.mvs)
     writeCell(cooSheet, "D25", str(data.consignee), "s");
-    writeCell(cooSheet, "D33", str(data.vessel_voyage_no), "s");
+    writeCell(cooSheet, "D33", dikirim_oleh, "s");
     writeCell(cooSheet, "D36", str(data.ship_date), "s");
     writeCell(cooSheet, "D39", str(data.document_no_bl), "s");
     writeCell(cooSheet, "D40", str(data.date_bl), "s");
@@ -287,6 +293,9 @@ export async function getCooExcelBlob(ocrResult) {
     // Write new rows from OCR table data
     const safeNum = (v) => {
       if (v === null || v === undefined || v === "") return 0;
+      if (typeof v === "string") {
+        v = v.replace(/,/g, "");
+      }
       const n = parseFloat(v);
       return isNaN(n) ? v : n;
     };

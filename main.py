@@ -370,21 +370,21 @@ async def process_ocr_coo_document(
     bl_data = bl_data or {}
 
     # Process PEB
-    peb_pages = pages if pages else "-2"
+    peb_pages = "-2"
     peb_file_pages = await _process_files([classified["PEB"]], pages=peb_pages, document_type="PEB")
     peb_result = await run_ocr("PEB", peb_file_pages, None, "")
     peb_data = peb_result.get("data", {}) if peb_result.get("success") else {}
     peb_data = peb_data or {}
 
     # Process PL
-    pl_pages = pages if pages else "1"
+    pl_pages = "1"
     pl_file_pages = await _process_files([classified["PL"]], pages=pl_pages, document_type="PL")
     pl_result = await run_ocr("PL", pl_file_pages, None, "")
     pl_data = pl_result.get("data", {}) if pl_result.get("success") else {}
     pl_data = pl_data or {}
 
     # Process INV_COO
-    inv_pages = pages if pages else "1"
+    inv_pages = "1"
     inv_file_pages = await _process_files([classified["INV_COO"]], pages=inv_pages, document_type="INV_COO")
     inv_result = await run_ocr("INV_COO", inv_file_pages, None, "")
     inv_data = inv_result.get("data", {}) if inv_result.get("success") else {}
