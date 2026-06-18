@@ -135,7 +135,7 @@ export default function Dashboard({ onPageChange, startGuidedTour }) {
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
             <div>
               <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Panduan Penggunaan</h4>
-              <p className="text-[11px] text-slate-450 mt-1 leading-relaxed">
+              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
                 Klik fitur di bawah untuk melihat panduan langkah demi langkah.
               </p>
             </div>
@@ -151,7 +151,7 @@ export default function Dashboard({ onPageChange, startGuidedTour }) {
                   key={item.id}
                   onClick={() => {
                     onPageChange(item.id);
-                    setTimeout(() => startGuidedTour(), 500);
+                    setTimeout(() => startGuidedTour(item.id), 500);
                   }}
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-transparent hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-pointer group"
                 >
@@ -161,10 +161,10 @@ export default function Dashboard({ onPageChange, startGuidedTour }) {
                     </div>
                     <div className="min-w-0">
                       <h5 className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate leading-none">{item.label}</h5>
-                      <p className="text-[10px] text-slate-450 mt-1 truncate">{item.text}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 truncate">{item.text}</p>
                     </div>
                   </div>
-                  <span className="material-symbols-outlined text-slate-355 dark:text-slate-655 group-hover:translate-x-0.5 transition-transform text-[16px]">
+                  <span className="material-symbols-outlined text-slate-300 dark:text-slate-600 group-hover:translate-x-0.5 transition-transform text-[16px]">
                     chevron_right
                   </span>
                 </div>

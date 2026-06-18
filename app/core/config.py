@@ -25,7 +25,7 @@ model = init_chat_model(
     base_url=f"{BASE_URL_LLM}/v1",
     api_key="EMPTY",
     temperature=0.0,
-    top_p=1.0,
+    top_p=0.95,
     extra_body={
         "top_k": 1
     }

@@ -93,7 +93,7 @@ EXPECTED FIELDS — extract ALL of the following:
    - Each row object in the list must contain:
      - `no`: The item/row index or sequential item number (set to null/empty if absent).
      - `kategori_barang`: The item category or description .
-     - `model`: The model or product code.
+     - `model`: The model or product code must match this regex (`^[A-Z0-9]{5}/[A-Z0-9]{7}$`) e.g `J890L/46U3KBN `.
      - `quantity_ctns`: Quantity in carton units.
      - `quantity_pcs`: Quantity in pieces.
      - `unit_price`: Unit price of the item.

@@ -13,7 +13,6 @@ export default function DokumenExtractor({
   isServiceReady,
   handleRunOcr,
   handleFileChange,
-  handleSupportTagClick,
   setUploadedFiles,
   setOcrResult,
   selectedPages,
@@ -26,26 +25,10 @@ export default function DokumenExtractor({
   handleDrop,
   activeMode,
   setActiveMode,
-  fieldsList,
-  setFieldsList,
+
   onSelectDirectory,
 }) {
-  const [newField, setNewField] = useState("");
 
-  const handleAddField = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const val = newField.trim().toLowerCase().replace(/\s+/g, "_");
-      if (val && !fieldsList.includes(val)) {
-        setFieldsList([...fieldsList, val]);
-      }
-      setNewField("");
-    }
-  };
-
-  const handleRemoveField = (fieldToRemove) => {
-    setFieldsList(fieldsList.filter((f) => f !== fieldToRemove));
-  };
 
   if (currentStep === 1) {
     return (
@@ -55,7 +38,7 @@ export default function DokumenExtractor({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => document.getElementById("file-input").click()}
-            className="border-2 border-dashed border-slate-250 dark:border-slate-750 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
+            className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
@@ -78,26 +61,11 @@ export default function DokumenExtractor({
             <span className="text-[10px] text-slate-400 mt-3">PDF, JPG, PNG • Maks. 50MB</span>
           </div>
 
-          {/* Supported Tags Example */}
-          <div className="mt-6">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2.5">Contoh file yang didukung</span>
-            <div className="flex flex-wrap gap-2">
-              {["KTP", "NPWP", "Invoice", "KK", "SIM", "Ijazah", "Dll."].map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => handleSupportTagClick(tag)}
-                  className="px-3.5 py-1.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-655 dark:text-slate-350 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-455 transition-all cursor-pointer shadow-sm"
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="col-span-12 lg:col-span-4">
           <div className="bg-blue-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-850 dark:text-slate-100 text-xs uppercase tracking-wider flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-blue-500 text-[18px]">lightbulb</span>
               Tips Penggunaan
             </h4>
@@ -169,39 +137,18 @@ export default function DokumenExtractor({
         {/* Col 2: Configuration */}
         <div className="col-span-12 lg:col-span-3 space-y-4">
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-455 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-850">
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-800">
               Konfigurasi Ekstraksi
             </h3>
 
-            {/* Sub-mode Selector: Document Type or Custom Fields */}
-            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-xl flex gap-1 border border-slate-200 dark:border-slate-850">
-              {[
-                { id: "doc-type", label: "Tipe Dokumen" },
-                { id: "fields", label: "Custom Fields" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActiveMode(m.id)}
-                  className={`flex-1 text-[11px] py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                    activeMode === m.id
-                      ? "bg-white dark:bg-slate-800 text-blue-650 dark:text-blue-400 shadow-sm"
-                      : "text-slate-450 hover:bg-white/50 dark:hover:bg-slate-900/50"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
 
             <div className="space-y-3">
-              {activeMode === "doc-type" ? (
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 block">Tipe Dokumen</span>
                   <select
                     value={selectedDocType}
                     onChange={(e) => setSelectedDocType(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-blue-500 transition-colors"
                   >
                     {docTypes.length === 0 ? (
                       <option>Memuat tipe dokumen...</option>
@@ -212,42 +159,7 @@ export default function DokumenExtractor({
                     )}
                   </select>
                 </label>
-              ) : (
-                /* Fields Mode input */
-                <div className="space-y-3">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                    Target Data (Tekan Enter)
-                  </span>
-                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-250 dark:border-slate-750 rounded-xl min-h-[90px] items-center">
-                    {fieldsList.map((field) => (
-                      <span
-                        key={field}
-                        className="bg-blue-50 dark:bg-blue-950/30 text-blue-650 dark:text-blue-400 px-2 py-0.5 rounded-md text-[10px] flex items-center gap-1 font-bold"
-                      >
-                        {field}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveField(field)}
-                          className="material-symbols-outlined text-[12px] cursor-pointer hover:text-red-500 font-bold"
-                        >
-                          close
-                        </button>
-                      </span>
-                    ))}
-                    <input
-                      type="text"
-                      value={newField}
-                      onChange={(e) => setNewField(e.target.value)}
-                      onKeyDown={handleAddField}
-                      className="bg-transparent border-none text-xs w-24 py-0.5 dark:text-slate-100 outline-none focus:ring-0 focus:outline-none"
-                      placeholder="+ Tambah Field"
-                    />
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-normal block">
-                    * Target data akan otomatis dikonversi ke snake_case.
-                  </p>
-                </div>
-              )}
+            
 
               <label className="block">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 block">Halaman (opsional)</span>
@@ -256,18 +168,18 @@ export default function DokumenExtractor({
                   value={pageSelectionText}
                   onChange={(e) => setPageSelectionText(e.target.value)}
                   placeholder="Contoh: 1,2,3-5"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-blue-500 transition-colors"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-blue-500 transition-colors"
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block leading-tight">Kosongkan untuk semua halaman</span>
               </label>
 
-              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-850">
+              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2.5 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px] text-blue-500">folder_open</span>
                   Folder Penyimpanan (Opsional)
                 </span>
                 {directoryHandle ? (
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-955 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
                     <span className="truncate max-w-[130px] font-medium text-slate-700 dark:text-slate-300" title={directoryHandle.name}>
                       📂 {directoryHandle.name}
                     </span>
@@ -283,7 +195,7 @@ export default function DokumenExtractor({
                   <button
                     type="button"
                     onClick={onSelectDirectory}
-                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-250 dark:border-slate-750 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
                   >
                     <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
                     Pilih Folder

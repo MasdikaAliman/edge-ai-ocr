@@ -57,7 +57,7 @@ export default function BatchExtractor({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => document.getElementById("file-input").click()}
-            className="border-2 border-dashed border-slate-250 dark:border-slate-750 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-purple-500 dark:hover:border-purple-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
+            className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-purple-500 dark:hover:border-purple-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
@@ -84,7 +84,7 @@ export default function BatchExtractor({
 
         <div className="col-span-12 lg:col-span-4">
           <div className="bg-purple-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-850 dark:text-slate-105 text-xs uppercase tracking-wider flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-purple-500 text-[18px]">lightbulb</span>
               Panduan Batch
             </h4>
@@ -112,7 +112,7 @@ export default function BatchExtractor({
         {/* Col 1: Uploaded list (Scrollable) */}
         <div className="col-span-12 md:col-span-4 space-y-4">
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col h-[300px]">
-            <h4 className="font-bold text-slate-855 dark:text-slate-200 text-xs border-b border-slate-100 dark:border-slate-800 pb-2 flex justify-between items-center">
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs border-b border-slate-100 dark:border-slate-800 pb-2 flex justify-between items-center">
               <span>File yang diunggah ({uploadedFiles.length})</span>
               {uploadedFiles.length > 0 && (
                 <button 
@@ -155,7 +155,7 @@ export default function BatchExtractor({
             </div>
             <button
               onClick={() => document.getElementById("file-input").click()}
-              className="w-full py-2 border border-dashed border-slate-350 dark:border-slate-750 text-slate-500 hover:border-purple-500 hover:text-purple-655 dark:text-slate-400 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:border-purple-500 hover:text-purple-600 dark:text-slate-400 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
               Tambah File
@@ -175,7 +175,7 @@ export default function BatchExtractor({
                     key={idx}
                     type="button"
                     onClick={() => setCustomPrompt(ex.value)}
-                    className="w-full text-left p-2.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hover:border-purple-500 rounded-lg text-[11px] font-semibold text-slate-605 dark:text-slate-400 transition-colors shadow-sm truncate cursor-pointer"
+                    className="w-full text-left p-2.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hover:border-purple-500 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-400 transition-colors shadow-sm truncate cursor-pointer"
                   >
                     {ex.label}
                   </button>
@@ -188,12 +188,12 @@ export default function BatchExtractor({
         {/* Col 2: Configuration */}
         <div className="col-span-12 md:col-span-4 space-y-4">
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-455 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-850">
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-800">
               Konfigurasi Batch
             </h3>
 
             {/* Sub-mode Selector: Document Type, Custom Fields, or Custom Prompt */}
-            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-xl flex gap-1 border border-slate-200 dark:border-slate-855">
+            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-xl flex gap-1 border border-slate-200 dark:border-slate-800">
               {[
                 { id: "doc-type", label: "Tipe Dokumen" },
                 { id: "fields", label: "Custom Fields" },
@@ -206,7 +206,7 @@ export default function BatchExtractor({
                   className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
                     activeMode === m.id
                       ? "bg-white dark:bg-slate-800 text-purple-650 dark:text-purple-400 shadow-sm"
-                      : "text-slate-450 hover:bg-white/50 dark:hover:bg-slate-900/50"
+                      : "text-slate-400 hover:bg-white/50 dark:hover:bg-slate-900/50"
                   }`}
                 >
                   {m.label}
@@ -221,7 +221,7 @@ export default function BatchExtractor({
                   <select
                     value={selectedDocType}
                     onChange={(e) => setSelectedDocType(e.target.value)}
-                    className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
                   >
                     {docTypes.map((type) => (
                       <option key={type} value={type}>{type}</option>
@@ -235,7 +235,7 @@ export default function BatchExtractor({
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
                     Target Data (Tekan Enter)
                   </span>
-                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-55 dark:bg-slate-955 border border-dashed border-slate-250 dark:border-slate-750 rounded-xl min-h-[90px] items-center">
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl min-h-[90px] items-center">
                     {fieldsList.map((field) => (
                       <span
                         key={field}
@@ -273,7 +273,7 @@ export default function BatchExtractor({
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
                     maxLength={2000}
-                    className="w-full font-data-mono text-data-mono bg-slate-50 dark:bg-slate-955 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl p-3 outline-none focus:border-purple-500 transition-colors resize-none"
+                    className="w-full font-data-mono text-data-mono bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl p-3 outline-none focus:border-purple-500 transition-colors resize-none"
                     rows="5"
                     placeholder="Tulis instruksi ekstraksi di sini..."
                   />
@@ -290,7 +290,7 @@ export default function BatchExtractor({
                   value={pageSelectionText}
                   onChange={(e) => setPageSelectionText(e.target.value)}
                   placeholder="Contoh: 1,2,3-5"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
                 />
               </label>
 
@@ -299,7 +299,7 @@ export default function BatchExtractor({
                 <select
                   value={concurrencyLimit}
                   onChange={(e) => setConcurrencyLimit(parseInt(e.target.value))}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-purple-500 transition-colors"
                 >
                   {[1, 2, 3, 4, 5].map((val) => (
                     <option key={val} value={val}>{val === 3 ? `${val} (Direkomendasikan)` : val}</option>
@@ -307,13 +307,13 @@ export default function BatchExtractor({
                 </select>
               </label>
 
-              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-855">
+              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2.5 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px] text-purple-500">folder_open</span>
                   Folder Penyimpanan (Opsional)
                 </span>
                 {directoryHandle ? (
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-955 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
                     <span className="truncate max-w-[130px] font-medium text-slate-700 dark:text-slate-300" title={directoryHandle.name}>
                       📂 {directoryHandle.name}
                     </span>
@@ -329,7 +329,7 @@ export default function BatchExtractor({
                   <button
                     type="button"
                     onClick={onSelectDirectory}
-                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-250 dark:border-slate-750 hover:border-purple-500 hover:text-purple-655 dark:hover:text-purple-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-200 dark:border-slate-700 hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
                   >
                     <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
                     Pilih Folder
@@ -377,7 +377,7 @@ export default function BatchExtractor({
           <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">
             Pemrosesan Batch Sedang Berjalan
           </h4>
-          <p className="text-xs text-slate-450 truncate max-w-[350px] mx-auto font-mono">
+          <p className="text-xs text-slate-400 truncate max-w-[350px] mx-auto font-mono">
             📁 {progressInfo?.filename || "Menghubungi server..."}
           </p>
         </div>
@@ -426,7 +426,7 @@ export default function BatchExtractor({
               const isFailed = ocrResult?.batch_summary?.failures?.some(f => f.startsWith(file.name));
               return (
                 <div key={idx} className="flex items-center justify-between p-2 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 text-xs">
-                  <span className="truncate max-w-[180px] font-medium text-slate-655 dark:text-slate-350">
+                  <span className="truncate max-w-[180px] font-medium text-slate-600 dark:text-slate-300">
                     {file.name}
                   </span>
                   <span className={`flex items-center gap-1 font-bold ${isFailed ? "text-red-500" : "text-emerald-500"}`}>

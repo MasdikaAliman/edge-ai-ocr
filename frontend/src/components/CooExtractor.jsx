@@ -5,8 +5,6 @@ import ResultViewer from "./ResultViewer";
 export default function CooExtractor({
   currentStep,
   uploadedFiles,
-  pageSelectionText,
-  setPageSelectionText,
   isServiceReady,
   handleRunOcr,
   handleFileChange,
@@ -30,7 +28,7 @@ export default function CooExtractor({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => document.getElementById("file-input").click()}
-            className="border-2 border-dashed border-slate-250 dark:border-slate-750 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-emerald-500 dark:hover:border-emerald-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
+            className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-emerald-500 dark:hover:border-emerald-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
@@ -57,7 +55,7 @@ export default function CooExtractor({
 
         <div className="col-span-12 lg:col-span-4">
           <div className="bg-emerald-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-850 dark:text-slate-105 text-xs uppercase tracking-wider flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-emerald-500 text-[18px]">lightbulb</span>
               Panduan COO
             </h4>
@@ -135,12 +133,12 @@ export default function CooExtractor({
         {/* Col 2: Configuration */}
         <div className="col-span-12 lg:col-span-3 space-y-4">
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-455 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-850">
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-800">
               Konfigurasi COO
             </h3>
 
             <div className="space-y-3">
-              <label className="block">
+              {/* <label className="block">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 block">Tipe Dokumen</span>
                 <input
                   type="text"
@@ -148,8 +146,8 @@ export default function CooExtractor({
                   value="COO"
                   className="w-full bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs rounded-xl px-3.5 py-2.5 outline-none cursor-not-allowed font-bold"
                 />
-              </label>
-
+              </label> */}
+{/* 
               <label className="block">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 block">Halaman (opsional)</span>
                 <input
@@ -157,17 +155,17 @@ export default function CooExtractor({
                   value={pageSelectionText}
                   onChange={(e) => setPageSelectionText(e.target.value)}
                   placeholder="Contoh: 1,2,3-5"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-500 transition-colors"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-500 transition-colors"
                 />
-              </label>
+              </label> */}
 
-              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-850">
+              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2.5 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px] text-emerald-500">folder_open</span>
                   Folder Penyimpanan (Opsional)
                 </span>
                 {directoryHandle ? (
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-955 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
                     <span className="truncate max-w-[130px] font-medium text-slate-700 dark:text-slate-300" title={directoryHandle.name}>
                       📂 {directoryHandle.name}
                     </span>
@@ -183,7 +181,7 @@ export default function CooExtractor({
                   <button
                     type="button"
                     onClick={onSelectDirectory}
-                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-250 dark:border-slate-750 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
                   >
                     <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
                     Pilih Folder
@@ -216,7 +214,7 @@ export default function CooExtractor({
         {/* Col 4: Tips */}
         <div className="col-span-12 lg:col-span-2">
           <div className="bg-emerald-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-4 rounded-xl shadow-sm space-y-3">
-            <h4 className="font-bold text-slate-850 dark:text-slate-200 text-[11px] uppercase tracking-wider">Masing-Masing</h4>
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 text-[11px] uppercase tracking-wider">Masing-Masing</h4>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
               Pastikan 4 berkas diunggah: BL, PEB, PL, INV. OCR akan menggabungkan data secara otomatis.
             </p>

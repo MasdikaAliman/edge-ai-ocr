@@ -33,7 +33,7 @@ export default function CustomPromptExtractor({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => document.getElementById("file-input").click()}
-            className="border-2 border-dashed border-slate-250 dark:border-slate-750 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-orange-500 dark:hover:border-orange-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
+            className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-orange-500 dark:hover:border-orange-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
@@ -68,7 +68,7 @@ export default function CustomPromptExtractor({
                 <button
                   key={idx}
                   onClick={() => handlePromptExampleClick(ex)}
-                  className="px-3.5 py-1.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-655 dark:text-slate-350 hover:border-orange-500 hover:text-orange-600 dark:hover:text-orange-450 transition-all cursor-pointer shadow-sm"
+                  className="px-3.5 py-1.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-orange-500 hover:text-orange-600 dark:hover:text-orange-400 transition-all cursor-pointer shadow-sm"
                 >
                   {ex.label}
                 </button>
@@ -79,7 +79,7 @@ export default function CustomPromptExtractor({
 
         <div className="col-span-12 lg:col-span-4">
           <div className="bg-orange-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-855 dark:text-slate-105 text-xs uppercase tracking-wider flex items-center gap-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-orange-500 text-[18px]">lightbulb</span>
               Panduan Prompt
             </h4>
@@ -159,7 +159,7 @@ export default function CustomPromptExtractor({
                 <button
                   key={idx}
                   onClick={() => handlePromptExampleClick(ex)}
-                  className="w-full text-left p-2.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hover:border-orange-500 rounded-lg text-[11px] font-semibold text-slate-605 dark:text-slate-400 transition-colors shadow-sm truncate"
+                  className="w-full text-left p-2.5 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hover:border-orange-500 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-400 transition-colors shadow-sm truncate"
                 >
                   {ex.label}
                 </button>
@@ -171,7 +171,7 @@ export default function CustomPromptExtractor({
         {/* Col 2: Prompt configuration */}
         <div className="col-span-12 lg:col-span-4 space-y-4">
           <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-455 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-850">
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-100 dark:border-slate-800">
               Prompt Kustom
             </h3>
 
@@ -182,7 +182,7 @@ export default function CustomPromptExtractor({
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
                   maxLength={2000}
-                  className="w-full font-data-mono text-data-mono bg-slate-50 dark:bg-slate-955 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl p-3 outline-none focus:border-orange-500 transition-colors resize-none"
+                  className="w-full font-data-mono text-data-mono bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl p-3 outline-none focus:border-orange-500 transition-colors resize-none"
                   rows="6"
                   placeholder="Tulis instruksi ekstraksi di sini..."
                 />
@@ -198,17 +198,17 @@ export default function CustomPromptExtractor({
                   value={pageSelectionText}
                   onChange={(e) => setPageSelectionText(e.target.value)}
                   placeholder="Contoh: 1,2,3-5"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-750 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-orange-500 transition-colors"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs rounded-xl px-3.5 py-2.5 outline-none focus:border-orange-500 transition-colors"
                 />
               </label>
 
-              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-850">
+              <div className="pt-2 pb-1 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2.5 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px] text-orange-500">folder_open</span>
                   Folder Penyimpanan (Opsional)
                 </span>
                 {directoryHandle ? (
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-955 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
                     <span className="truncate max-w-[130px] font-medium text-slate-700 dark:text-slate-300" title={directoryHandle.name}>
                       📂 {directoryHandle.name}
                     </span>
@@ -224,7 +224,7 @@ export default function CustomPromptExtractor({
                   <button
                     type="button"
                     onClick={onSelectDirectory}
-                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-250 dark:border-slate-750 hover:border-orange-500 hover:text-orange-650 dark:hover:text-orange-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-200 dark:border-slate-700 hover:border-orange-500 hover:text-orange-650 dark:hover:text-orange-400 font-semibold py-2 px-3 rounded-xl text-xs transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900/40"
                   >
                     <span className="material-symbols-outlined text-[16px]">create_new_folder</span>
                     Pilih Folder

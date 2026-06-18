@@ -45,7 +45,7 @@ export default function Stepper({ activePage, currentStep, onStepClick }) {
                     ? "text-blue-600 dark:text-blue-400 font-bold"
                     : isCompleted
                     ? "text-emerald-500 dark:text-emerald-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 group-hover:underline decoration-emerald-500/30"
-                    : "text-slate-450"
+                    : "text-slate-400"
                 }`}
               >
                 {stepName}

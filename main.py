@@ -96,13 +96,13 @@ async def _process_files(
             if mime == "application/pdf":
                 # Determine page range rule for this PDF
                 if document_type == "INV_COO":
-                    file_pages = pages if pages else "1"
+                    file_pages = "1"
                 elif document_type == "PEB":
-                    file_pages = pages if pages else "-2"
+                    file_pages = "-2"
                 elif document_type == "PL":
-                    file_pages = pages if pages else "1"
+                    file_pages = "1"
                 elif document_type == "Invoice_SPBB":
-                    file_pages = pages if pages else "1, -2"
+                    file_pages = "1, -1, -2"
                 else:
                     file_pages = pages
 

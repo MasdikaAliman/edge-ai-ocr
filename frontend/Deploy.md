@@ -1,4 +1,4 @@
-# 🚀 Frontend Deployment Guide — Edge AI OCR
+# 🚀 Frontend Deployment Guide — Satnusa AI OCR
 
 > **Target**: Deploy the Vite/React frontend on your server PC (the same machine running the FastAPI backend).
 
@@ -200,7 +200,7 @@ Start-Job -ScriptBlock {
 
 ```ini
 [Unit]
-Description=Edge AI OCR FastAPI Backend
+Description=Satnusa AI OCR FastAPI Backend
 After=network.target
 
 [Service]
@@ -218,7 +218,7 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=Edge AI OCR Frontend (serve)
+Description=Satnusa AI OCR Frontend (serve)
 After=network.target
 
 [Service]

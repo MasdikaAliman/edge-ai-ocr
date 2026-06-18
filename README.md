@@ -1,4 +1,4 @@
-# Edge AI OCR API
+# Satnusa AI OCR API
 
 High-precision document OCR powered by **Qwen3-VL** via vLLM. This API supports multimodal processing, allowing it to "see" page images, table crops, and extract structured data into JSON format.
 

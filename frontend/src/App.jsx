@@ -18,10 +18,11 @@ import {
 } from "./utils/fileSystem";
 
 export default function App() {
-  const baseUrl = "http://localhost:5030";
+  const baseUrl = "http://192.168.13.176:5030";
 
   // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt"
   const [activePage, setActivePage] = useState("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // App States
   const [isServiceReady, setIsServiceReady] = useState(true);
@@ -384,20 +385,6 @@ export default function App() {
     setPageSelectionText("");
   };
 
-  const handleSupportTagClick = (tag) => {
-    const matched = docTypes.find(t => t.toLowerCase() === tag.toLowerCase());
-    if (matched) {
-      setSelectedDocType(matched);
-      toast.success(`Tipe dokumen diset ke: ${matched}`);
-    } else {
-      if (tag.toLowerCase() === "dll.") {
-        toast("Silakan pilih tipe dokumen di menu konfigurasi.");
-      } else {
-        toast.error(`Tipe dokumen ${tag} tidak didukung.`);
-      }
-    }
-  };
-
   const handlePromptExampleClick = (ex) => {
     setCustomPrompt(ex.value);
     toast.success("Prompt contoh berhasil diterapkan!");
@@ -457,14 +444,16 @@ export default function App() {
       case "prompt":
         return { title: "Custom Prompt", desc: "Ekstraksi bebas menggunakan prompt kustom sesuai kebutuhan Anda." };
       default:
-        return { title: "Edge AI OCR", desc: "Local AI Document Extraction" };
+        return { title: "Satnusa AI OCR", desc: "Local AI Document Extraction" };
     }
   };
 
   const pageInfo = getPageInfo();
 
-  const handleStartGuidedTour = () => {
+  const handleStartGuidedTour = (tourId) => {
+    const selectedTourId = typeof tourId === "string" ? tourId : (activePage === "dashboard" ? "dokumen" : activePage);
     startGuidedTour({
+      tourId: selectedTourId,
       setActivePage,
       setUploadedFiles,
       setOcrResult,
@@ -512,6 +501,8 @@ export default function App() {
         onPageChange={handlePageChange}
         isServiceReady={isServiceReady}
         startGuidedTour={handleStartGuidedTour}
+        isCollapsed={sidebarCollapsed}
+        setIsCollapsed={setSidebarCollapsed}
       />
 
       {/* Main Content Area Wrapper */}
@@ -549,7 +540,6 @@ export default function App() {
                   docTypes={docTypes}
                   selectedDocType={selectedDocType}
                   setSelectedDocType={setSelectedDocType}
-                  handleSupportTagClick={handleSupportTagClick}
                 />
               )}
 
@@ -581,6 +571,11 @@ export default function App() {
             </div>
           )}
         </main>
+
+        {/* Footer */}
+        <footer className="py-3 px-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center text-[10px] text-slate-400 dark:text-slate-500 transition-colors duration-300">
+          <p>© {new Date().getFullYear()} Powered by DIT Department Versi 1.0.0</p>
+        </footer>
       </div>
     </div>
   );

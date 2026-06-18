@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <linearGradient id="laserGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0" />
+      <stop offset="50%" stop-color="#10b981" stop-opacity="1" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded container background -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  
+  <!-- Document Shape -->
+  <path d="M160 96h160l96 96v224c0 17.67-14.33 32-32 32H160c-17.67 0-32-14.33-32-32V128c0-17.67 14.33-32 32-32z" fill="none" stroke="url(#accentGrad)" stroke-width="20" stroke-linejoin="round" />
+  <path d="M320 96v96h96" fill="none" stroke="url(#accentGrad)" stroke-width="20" stroke-linejoin="round" />
+  
+  <!-- Text lines inside document -->
+  <line x1="180" y1="240" x2="332" y2="240" stroke="#94a3b8" stroke-width="16" stroke-linecap="round" />
+  <line x1="180" y1="290" x2="300" y2="290" stroke="#94a3b8" stroke-width="16" stroke-linecap="round" />
+  <line x1="180" y1="340" x2="332" y2="340" stroke="#94a3b8" stroke-width="16" stroke-linecap="round" />
+  
+  <!-- Scanning Laser Line (OCR effect) -->
+  <rect x="80" y="270" width="352" height="8" rx="4" fill="url(#laserGrad)" />
+  <!-- Glowing laser dots -->
+  <circle cx="256" cy="274" r="14" fill="#10b981" />
+  
+  <!-- Eye/Lens/AI target icon overlay -->
+  <circle cx="256" cy="274" r="64" fill="none" stroke="#10b981" stroke-width="8" stroke-dasharray="20,10" />
+</svg>

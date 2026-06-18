@@ -1,4 +1,4 @@
-# SYSTEM_MAP — Edge AI OCR
+# SYSTEM_MAP — Satnusa AI OCR
 
 ---
 

@@ -9,12 +9,12 @@ export default function TopBar({
   startGuidedTour,
 }) {
   return (
-    <header className="h-16 flex items-center justify-between px-8 bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-850 transition-colors duration-300">
+    <header className="h-16 flex items-center justify-between px-8 bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
       <div className="space-y-0.5">
         <h1 className="text-md font-bold text-slate-800 dark:text-slate-100 leading-tight">
           {pageTitle}
         </h1>
-        <p className="text-xs text-slate-450 truncate max-w-[500px]">
+        <p className="text-xs text-slate-400 truncate max-w-[500px]">
           {pageDesc}
         </p>
       </div>
@@ -39,7 +39,7 @@ export default function TopBar({
         {/* Panduan Outline Button */}
         <button
           onClick={startGuidedTour}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-blue-600 dark:hover:text-blue-400 transition-all font-semibold text-xs cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-blue-600 dark:hover:text-blue-400 transition-all font-semibold text-xs cursor-pointer"
         >
           <span className="material-symbols-outlined text-[16px]">book</span>
           <span>Panduan</span>
@@ -48,7 +48,7 @@ export default function TopBar({
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
-          className="relative w-12 h-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-250 dark:border-slate-700 transition-colors duration-500 focus:outline-none overflow-hidden cursor-pointer"
+          className="relative w-12 h-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors duration-500 focus:outline-none overflow-hidden cursor-pointer"
           id="theme-toggle"
           title="Ubah Tema"
         >

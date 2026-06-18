@@ -268,6 +268,8 @@ def parse_page_filter(pages_str: str, total_pages: int = 0) -> Optional[Set[int]
             try:
                 start = int(start_str)
                 end = int(end_str)
+                orig_start = start
+                orig_end = end
                 if start < 0 and total_pages > 0:
                     start = total_pages + 1 + start
                 if end < 0 and total_pages > 0:
@@ -281,6 +283,45 @@ def parse_page_filter(pages_str: str, total_pages: int = 0) -> Optional[Set[int]
                         "message": f"Invalid page range: '{part}'. Use format like '1-5' or '-2--1'.",
                     },
                 )
+            
+            if total_pages > 0:
+                if start < 1 or start > total_pages:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Page number {orig_start} is out of bounds. The PDF has only {total_pages} pages.",
+                        },
+                    )
+                if end < 1 or end > total_pages:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Page number {orig_end} is out of bounds. The PDF has only {total_pages} pages.",
+                        },
+                    )
+                if orig_start < 0 and start == 1 and total_pages > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Invalid page range: '{part}'. Page {orig_start} resolves to page 1, which is invalid.",
+                        },
+                    )
+                if orig_end < 0 and end == 1 and total_pages > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Invalid page range: '{part}'. Page {orig_end} resolves to page 1, which is invalid.",
+                        },
+                    )
+
             if start < 1 or end < start:
                 raise HTTPException(
                     status_code=400,
@@ -294,6 +335,7 @@ def parse_page_filter(pages_str: str, total_pages: int = 0) -> Optional[Set[int]
         else:
             try:
                 num = int(part)
+                orig_num = num
                 if num < 0 and total_pages > 0:
                     num = total_pages + 1 + num
             except ValueError:
@@ -305,9 +347,29 @@ def parse_page_filter(pages_str: str, total_pages: int = 0) -> Optional[Set[int]
                         "message": f"Invalid page number: '{part}'. Must be an integer.",
                     },
                 )
-            if num < 1:
-                # If negative number resolves out of bounds, skip
-                continue
+            
+            if total_pages > 0:
+                if num < 1 or num > total_pages:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Page number {orig_num} is out of bounds. The PDF has only {total_pages} pages.",
+                        },
+                    )
+                if orig_num < 0 and num == 1 and total_pages > 1:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "success": False,
+                            "error_type": "invalid_page_number",
+                            "message": f"Invalid page selection: '{part}'. For a {total_pages}-page PDF, page {orig_num} resolves to page 1, which is invalid.",
+                        },
+                    )
+            else:
+                if num < 1:
+                    continue
             page_set.add(num)
             
     return page_set

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 /**
  * Helper to translate raw snake_case keys into Indonesian Title Case headers.
@@ -221,78 +222,53 @@ export async function getCooExcelBlob(ocrResult) {
   }
   const arrayBuffer = await response.arrayBuffer();
 
-  // 2. Read workbook preserving styles
-  const wb = XLSX.read(new Uint8Array(arrayBuffer), {
-    type: "array",
-    cellStyles: true,
-    cellDates: true,
-  });
+  // 2. Load workbook into exceljs
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
 
   // 3. Extract OCR data
   const data = ocrResult?.data || ocrResult || {};
 
-  // Helper: write a value into an existing cell while preserving its style
-  const writeCell = (ws, address, value, cellType) => {
-    const existing = ws[address] || {};
-    ws[address] = {
-      ...existing,          // keep style (s), any formula metadata, etc.
-      v: value,
-      t: cellType,
-      w: String(value ?? ""),
-    };
-  };
-
   // Safely coerce to string (null/undefined → empty string)
   const str = (v) => (v !== null && v !== undefined ? String(v) : "");
 
-  // Safely coerce to number (falls back to the raw value as string if not parseable)
-  const num = (v) => {
-    if (typeof v === "string") {
-      v = v.replace(/,/g, "");
-    }
-    const n = parseFloat(v);
-    return isNaN(n) ? str(v) : n;
-  };
-
   // 4. Fill "CREATE COO" sheet scalars
-  const cooSheet = wb.Sheets["CREATE COO"];
+  const cooSheet = workbook.getWorksheet("CREATE COO");
   if (cooSheet) {
-    writeCell(cooSheet, "D4", str(data.country_of_destination, "s"))
-    writeCell(cooSheet, "D6", str(data.form), "s")
-    const dikirim_oleh = str(data.vessel_voyage_no) + " / " + str(data.mvs)
-    writeCell(cooSheet, "D25", str(data.consignee), "s");
-    writeCell(cooSheet, "D33", dikirim_oleh, "s");
-    writeCell(cooSheet, "D36", str(data.ship_date), "s");
-    writeCell(cooSheet, "D39", str(data.document_no_bl), "s");
-    writeCell(cooSheet, "D40", str(data.date_bl), "s");
-    writeCell(cooSheet, "D44", num(data.total_amount), "n");
-    writeCell(cooSheet, "D45", str(data.document_no_peb), "s");
-    writeCell(cooSheet, "D46", str(data.date_peb), "s");
-    writeCell(cooSheet, "D49", str(data.document_no_pl), "s");
-    writeCell(cooSheet, "D50", str(data.date_pl), "s");
-    writeCell(cooSheet, "D54", str(data.invoice_no), "s");
-    writeCell(cooSheet, "D55", str(data.invoice_date), "s");
-    writeCell(cooSheet, "D57", num(data.total_amount), "n");
+    cooSheet.getCell("D4").value = str(data.country_of_destination);
+    cooSheet.getCell("D6").value = str(data.form);
+    const dikirim_oleh = str(data.vessel_voyage_no) + " / " + str(data.mvs);
+    cooSheet.getCell("D25").value = str(data.consignee);
+    cooSheet.getCell("D33").value = dikirim_oleh;
+    cooSheet.getCell("D36").value = str(data.ship_date);
+    cooSheet.getCell("D39").value = str(data.document_no_bl);
+    cooSheet.getCell("D40").value = str(data.date_bl);
+    cooSheet.getCell("D44").value = str(data.total_amount);
+    cooSheet.getCell("D45").value = str(data.document_no_peb);
+    cooSheet.getCell("D46").value = str(data.date_peb);
+    cooSheet.getCell("D49").value = str(data.document_no_pl);
+    cooSheet.getCell("D50").value = str(data.date_pl);
+    cooSheet.getCell("D54").value = str(data.invoice_no);
+    cooSheet.getCell("D55").value = str(data.invoice_date);
+    cooSheet.getCell("D57").value = str(data.total_amount);
   }
 
   // 5. Fill "Sheet1" with table items
-  const sheet1 = wb.Sheets["Sheet1"];
+  const sheet1 = workbook.getWorksheet("Sheet1");
   if (sheet1 && Array.isArray(data.table) && data.table.length > 0) {
     const tableItems = data.table;
 
-    // Clear existing sample data rows (rows 2+ in 1-indexed = r>=1 in 0-indexed)
-    // Row 1 header (r=0) and K1 formula are NOT touched.
-    const currentRange = XLSX.utils.decode_range(sheet1["!ref"] || "A1:K18");
-    for (let r = 1; r <= currentRange.e.r; r++) {
-      for (let c = currentRange.s.c; c <= currentRange.e.c; c++) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        delete sheet1[addr];
+    // Clear existing sample data rows (rows 2 to 100)
+    for (let r = 2; r <= 100; r++) {
+      const row = sheet1.getRow(r);
+      for (let c = 1; c <= 9; c++) {
+        row.getCell(c).value = null;
       }
     }
 
     // Write new rows from OCR table data
     const safeNum = (v) => {
-      if (v === null || v === undefined || v === "") return 0;
+      if (v === null || v === undefined || v === "") return "";
       if (typeof v === "string") {
         v = v.replace(/,/g, "");
       }
@@ -303,31 +279,21 @@ export async function getCooExcelBlob(ocrResult) {
 
     tableItems.forEach((item, idx) => {
       const r = idx + 2; // Excel row (1-indexed), data starts at row 2
-      sheet1[`A${r}`] = { v: idx + 1,                        t: "n" };
-      sheet1[`B${r}`] = { v: safeStr(item.kategori_barang),  t: "s" };
-      sheet1[`C${r}`] = { v: safeStr(item.model),            t: "s" };
-      sheet1[`D${r}`] = { v: safeNum(item.quantity_ctns),    t: "n" };
-      sheet1[`E${r}`] = { v: safeNum(item.quantity_pcs),     t: "n" };
-      sheet1[`F${r}`] = { v: safeNum(item.unit_price),       t: "n" };
-      sheet1[`G${r}`] = { v: safeNum(item.amount_usd),       t: "n" };
-      sheet1[`H${r}`] = { v: safeNum(item.bruto),            t: "n" };
-      sheet1[`I${r}`] = { v: safeNum(item.netto),            t: "n" };
-    });
-
-    // Update sheet range to cover the new data extent (A1 : K{lastRow})
-    const lastDataRow = tableItems.length + 1; // +1 for header row
-    sheet1["!ref"] = XLSX.utils.encode_range({
-      s: { r: 0, c: 0 },
-      e: { r: lastDataRow, c: 10 }, // columns A–K (0-indexed 0–10)
+      const row = sheet1.getRow(r);
+      row.getCell(1).value = idx + 1;
+      row.getCell(2).value = safeStr(item.kategori_barang);
+      row.getCell(3).value = safeStr(item.model);
+      row.getCell(4).value = safeNum(item.quantity_ctns);
+      row.getCell(5).value = safeNum(item.quantity_pcs);
+      row.getCell(6).value = safeNum(item.unit_price);
+      row.getCell(7).value = safeNum(item.amount_usd);
+      row.getCell(8).value = safeNum(item.bruto);
+      row.getCell(9).value = safeNum(item.netto);
     });
   }
 
   // 6. Serialize to Blob
-  const excelBuffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    cellStyles: true,
-  });
+  const excelBuffer = await workbook.xlsx.writeBuffer();
   return new Blob([excelBuffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
