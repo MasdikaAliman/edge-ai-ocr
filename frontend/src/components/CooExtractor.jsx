@@ -19,6 +19,7 @@ export default function CooExtractor({
   handleDragOver,
   handleDrop,
   onSelectDirectory,
+  handleAppendFileChange,
 }) {
   if (currentStep === 1) {
     return (
@@ -124,7 +125,7 @@ export default function CooExtractor({
               id="file-input"
               multiple
               accept=".pdf, image/*"
-              onChange={handleFileChange}
+              onChange={handleAppendFileChange}
               className="hidden"
             />
           </div>
@@ -208,6 +209,7 @@ export default function CooExtractor({
             selectedPages={selectedPages}
             onPagesChange={setSelectedPages}
             showPageSelector={false}
+            ocrResult={ocrResult}
           />
         </div>
 
@@ -245,6 +247,7 @@ export default function CooExtractor({
           selectedPages={selectedPages}
           onPagesChange={setSelectedPages}
           showPageSelector={false}
+          ocrResult={ocrResult}
         />
       </div>
     </div>

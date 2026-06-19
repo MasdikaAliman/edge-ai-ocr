@@ -11,6 +11,18 @@ _LAST_VALUE_FIELDS = {
 
 # ---------- Shared Rule Blocks ----------
 
+GROUNDING_RULE = """
+GROUNDING & COORDINATE EXTRACTION (Qwen3-VL):
+- Every field/key in the JSON schema (including nested columns inside table or list arrays) must be transformed from a simple placeholder/scalar value into a grounding object.
+- The grounding object MUST contain exactly these two keys:
+  1. "value": The extracted text verbatim or normalized value (or null if the field is not present or blank).
+  2. "bbox_2d": The 2D bounding box of the extracted value, normalized to the range [0, 999] as an array of four integer: [x_min, y_min, x_max, y_max] where x_min, y_min are top-left, and x_max, y_max are bottom-right. If the field value is null or empty, set "bbox_2d" to null.
+- This wrapping rule applies to ALL keys, including top-level properties and nested properties inside array items.
+- Example structure transformation for a simple field:
+  "nik": "string" -> "nik": {"value": "2171012345678901", "bbox_2d": [150, 220, 480, 255]}
+- Never output a raw string or number directly; always wrap in this object structure.
+"""
+
 _OUTPUT_VALIDATION = """
 OUTPUT VALIDATION:
 - Avoid wrapping the output in markdown code fences (``` or ```json) — output pure JSON directly.
@@ -73,10 +85,12 @@ OUTPUT FORMAT:
 - Return a raw JSON object directly. Avoid markdown formatting, code fences (``` or ```json), or commentary.
 - Do NOT wrap output in "success", "data", "result", or any envelope object.
 - Do NOT add any text before or after the JSON.
+{GROUNDING_RULE}
 {_OUTPUT_VALIDATION}
 {_CURRENCY_RULE}
 {_DATE_RULE}
 {NUMERIC_RULE}
+
 """
 
 BASE_DIRECTIVES_COO = f"""
@@ -93,62 +107,52 @@ OUTPUT FORMAT:
 - Return a raw JSON object directly. Avoid markdown formatting, code fences (``` or ```json), or commentary.
 - Do NOT wrap output in "success", "data", "result", or any envelope object.
 - Do NOT add any text before or after the JSON.
+{GROUNDING_RULE}
 {_OUTPUT_VALIDATION}
 {_CURRENCY_RULE}
 {_COO_RULE_DATE}
 {NUMERIC_RULE}
+
 """
 
-
-CUSTOM_BASE_PROMPT = """You are a flexible document extraction assistant. \
+CUSTOM_BASE_PROMPT = f"""You are a flexible document extraction assistant. \
 Your primary directive is to follow the user's custom prompt below.
-
 Only reject if the instruction has absolutely nothing to do with the provided \
 document/image. When in doubt, follow the user's instruction.
-
 OUTPUT CONVENTION:
 - Follow the format the user requests (JSON, CSV, text, etc.).
 - If no specific format is requested, output JSON.
-- Use snake_case for any keys you invent yourself."""
-
-
-# ---------- General and Arbitrary Field Extraction Prompts ----------
-
-GENERAL_PROMPT = f"""You are a document OCR extraction engine. \
-Your only job is to read a document image and output extracted fields as a single JSON object.
+- Use snake_case for any keys you invent yourself.
 
 {BASE_DIRECTIVES}
+""" 
 
+# ---------- General and Arbitrary Field Extraction Prompts ----------
+GENERAL_PROMPT = f"""You are a document OCR extraction engine. \
+Your only job is to read a document image and output extracted fields as a single JSON object.
+{BASE_DIRECTIVES}
 STRUCTURE RULES:
 - Extract every label/key and its corresponding value as a key-value pair.
 - Use flat key-value pairs for simple fields.
 - Use arrays of objects for tables or repeating rows within an element.
 - Mirror the document's logical hierarchy — no extra nesting beyond tables.
-
 OUTPUT: A single JSON object reflecting all fields found in this image.
 Example for a simple form:
   {{"label_one": "value_one", "label_two": "value_two"}}
 Example for a page with a table:
   {{"items": [{{"column_a": "val1", "column_b": "val2"}}]}}
-
 Now extract all fields and key-value pairs from this image.
 """
-
 
 def get_prompt_for_fields(fields: list) -> str:
     if not fields:
         return GENERAL_PROMPT
-
     field_list = "\n".join(f"  - `{f}`" for f in fields)
-
     return f"""You are a document OCR extraction engine. \
 Your task is to extract ONLY the specific fields listed below from the document image.
-
 {BASE_DIRECTIVES}
-
 TARGET FIELDS TO EXTRACT:
 {field_list}
-
 FIELD MATCHING STRATEGY:
 - Each field name above is in snake_case. Map it to the most likely label in the document.
   Examples: `invoice_number` → "Invoice No", "Invoice #", "No. Faktur"
@@ -156,22 +160,28 @@ FIELD MATCHING STRATEGY:
             `nama_lengkap` → "Nama Lengkap", "Nama", "Full Name"
 - Scan the ENTIRE document systematically: headers → tables → body text → footers.
 - If a field could match multiple values, prefer the most prominent or primary occurrence.
-
 EXTRACTION RULES:
 - Extract the VALUE associated with each field, not the label itself.
 - If a field's value spans multiple lines, concatenate them into a single string.
 - If a field maps to a repeating/table structure (e.g. `items`, `members`), \
 return an array of objects with consistent keys derived from column headers.
 - For all other fields, return a single scalar value (string or number).
-
 OUTPUT RULES:
 - The output must contain ONLY the fields listed above — no extra keys.
 - JSON keys MUST exactly match the field names listed above (preserve snake_case).
 - If a field is not found anywhere in the document, set its value to null.
 - Return a single JSON object. Use flat key-value pairs for scalar fields \
 and arrays for table/repeating fields.
+- Every field/key in the output JSON (including nested columns inside table or list arrays) must be transformed from a simple placeholder/scalar value into a grounding object.
+- The grounding object MUST contain exactly these keys:
+  1. "value": The extracted text verbatim or normalized value (or null if the field is not present or blank).
+  2. "bbox_2d": The 2D bounding box of the extracted value, normalized to the range [0, 999] as an array of four integers: [x_min, y_min, x_max, y_max] where x_min, y_min are top-left, and x_max, y_max are bottom-right. If the field value is null or empty, set "bbox_2d" to null.
+- This wrapping rule applies to ALL keys, including top-level properties and nested properties inside array items.
+- Example structure transformation for a field:
+  "field_name": "string" -> "field_name": {"value": "extracted_value", "bbox_2d": [150, 220, 480, 255]}
+- If a field is not found anywhere in the document, set its value to null and "bbox_2d" to null.
+- Return a single JSON object.
 """
-
 
 def get_prompt_for_custom(custom_prompt: str) -> str:
     return CUSTOM_BASE_PROMPT
@@ -187,216 +197,217 @@ Re-analyze the document carefully, focusing on tables and structured rows.
 IMPORTANT:
 - Extract ONLY the missing fields listed above.
 - Do NOT overwrite fields that were already correctly extracted.
+- Every extracted field must be returned in the grounding object structure: {{"value": ..., "bbox_2d": ..., "confidence": ...}} conforming to the coordinate and formatting rules.
 - Return a raw JSON object directly (avoid markdown code fences or commentary).
 """
 
 
 # ---------- Shared Document Schemas ----------
 KTP_SCHEMA = """{
-  "provinsi": "string",
-  "kabupaten_kota": "string",
-  "nik": "string (16 digits)",
-  "nama": "string",
-  "tempat_lahir": "string",
-  "tanggal_lahir": "DD-MM-YYYY",
-  "jenis_kelamin": "LAKI-LAKI | PEREMPUAN",
-  "golongan_darah": "A | B | AB | O | null",
-  "alamat": "string",
-  "rt_rw": "string (e.g. 003/007)",
-  "kelurahan_desa": "string",
-  "kecamatan": "string",
-  "agama": "string",
-  "status_perkawinan": "BELUM KAWIN | KAWIN | CERAI HIDUP | CERAI MATI",
-  "pekerjaan": "string",
-  "kewarganegaraan": "WNI | WNA",
-  "berlaku_hingga": "YYYY-MM-DD | SEUMUR HIDUP"
+  "provinsi": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kabupaten_kota": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nik": {"value": "string (16 digits)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nama": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tempat_lahir": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_lahir": {"value": "DD-MM-YYYY", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "jenis_kelamin": {"value": "LAKI-LAKI | PEREMPUAN", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "golongan_darah": {"value": "A | B | AB | O | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "alamat": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "rt_rw": {"value": "string (e.g. 003/007)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kelurahan_desa": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kecamatan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "agama": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "status_perkawinan": {"value": "BELUM KAWIN | KAWIN | CERAI HIDUP | CERAI MATI", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "pekerjaan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kewarganegaraan": {"value": "WNI | WNA", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "berlaku_hingga": {"value": "YYYY-MM-DD | SEUMUR HIDUP", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 KK_SCHEMA = """{
-  "nomor_kk": "string (16 digits)",
-  "nama_kepala_keluarga": "string",
-  "alamat": "string",
-  "rt": "string",
-  "rw": "string",
-  "desa_kelurahan": "string",
-  "kecamatan": "string",
-  "kabupaten_kota": "string",
-  "provinsi": "string",
-  "kode_pos": "string",
+  "nomor_kk": {"value": "string (16 digits)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nama_kepala_keluarga": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "alamat": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "rt": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "rw": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "desa_kelurahan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kecamatan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kabupaten_kota": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "provinsi": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kode_pos": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
   "members": [
     {
-      "nama_lengkap": "string",
-      "nik": "string (16 digits)",
-      "jenis_kelamin": "string",
-      "tempat_lahir": "string",
-      "tanggal_lahir": "string (DD-MM-YYYY or as written)",
-      "agama": "string",
-      "pendidikan": "string",
-      "jenis_pekerjaan": "string",
-      "status_perkawinan": "string",
-      "status_hubungan_keluarga": "string",
-      "nama_ayah": "string",
-      "nama_ibu": "string"
+      "nama_lengkap": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "nik": {"value": "string (16 digits)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "jenis_kelamin": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "tempat_lahir": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "tanggal_lahir": {"value": "string (DD-MM-YYYY or as written)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "agama": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "pendidikan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "jenis_pekerjaan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "status_perkawinan": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "status_hubungan_keluarga": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "nama_ayah": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "nama_ibu": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]}
     }
   ]
 }"""
 
 NPWP_SCHEMA = """{
-  "nomor_npwp": "string (15 digits, no formatting) | null",
-  "nama": "string",
-  "alamat": "string",
-  "tanggal_terdaftar": "YYYY-MM-DD | null",
-  "kantor_kpp": "string"
+  "nomor_npwp": {"value": "string (15 digits, no formatting) | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nama": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "alamat": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_terdaftar": {"value": "YYYY-MM-DD | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kantor_kpp": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 INVOICE_SCHEMA = """{
-  "invoice_number": "",
-  "invoice_date": "",
-  "due_date": "",
-  "purchase_order": "",
-  "currency": "",
-  "total_amount": "",
-  "sales_order": "",
-  "remark": ""
+  "invoice_number": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "invoice_date": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "due_date": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "purchase_order": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "currency": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_amount": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "sales_order": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "remark": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 INV_COO_SCHEMA = """{
-  "invoice_number": "string | null",
-  "invoice_date": "string (DD-MM-YYYY or as written) | null",
-  "form": "string | null",
+  "invoice_number": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "invoice_date": {"value": "string (DD-MM-YYYY or as written) | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "form": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
   "table": [
     {
-      "no": "string | null",
-      "kategori_barang": "string | null",
-      "model": "string | null",
-      "quantity_ctns": "string | null",
-      "quantity_pcs": "string | null",
-      "unit_price": "string | null",
-      "amount_usd": "string | null",
-      "bruto": "string | null",
-      "netto": "string | null"
+      "no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "kategori_barang": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "model": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "quantity_ctns": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "quantity_pcs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "unit_price": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "amount_usd": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "bruto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "netto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
     }
   ],
-  "total_amount": "string | null",
-  "total_weight_bruto": "string | null",
-  "total_weight_netto": "string | null",
-  "total_quantity_ctns": "string | null",
-  "total_quantity_pcs": "string | null"
+  "total_amount": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_weight_bruto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_weight_netto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_quantity_ctns": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_quantity_pcs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 QUOTATION_SCHEMA = """{
-  "quotation_number": "",
-  "quotation_date": "",
-  "sales_agent": "",
-  "no_telp": "",
-  "currency": "",
-  "purchasing_group": "",
-  "plant": "",
-  "lead_time": "",
-  "submitted_by": "",
-  "total_amount": "",
+  "quotation_number": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "quotation_date": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "sales_agent": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "no_telp": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "currency": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "purchasing_group": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "plant": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "lead_time": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "submitted_by": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_amount": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
   "material_items": [
     {
-      "item_number": "",
-      "material_code": "",
-      "material_description": "",
-      "quantity": "",
-      "unit": "",
-      "unit_price": "",
-      "amount": "",
-      "UoM": ""
+      "item_number": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "material_code": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "material_description": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "quantity": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "unit": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "unit_price": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "amount": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "UoM": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]}
     }
   ]
 }"""
 
 SIM_SCHEMA = """{
-  "nomor_sim": "string (12 digits)",
-  "golongan_sim": "A | A Umum | B1 | B1 Umum | B2 | B2 Umum | C | C1 | D | D1",
-  "nama": "string",
-  "tempat_lahir": "string",
-  "tanggal_lahir": "DD-MM-YYYY",
-  "jenis_kelamin": "LAKI-LAKI | PEREMPUAN",
-  "golongan_darah": "A | B | AB | O | null",
-  "alamat": "string",
-  "pekerjaan": "string | null",
-  "berlaku_hingga": "DD-MM-YYYY",
-  "instansi_penerbit": "string | null"
+  "nomor_sim": {"value": "string (12 digits)", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "golongan_sim": {"value": "A | A Umum | B1 | B1 Umum | B2 | B2 Umum | C | C1 | D | D1", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nama": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tempat_lahir": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_lahir": {"value": "DD-MM-YYYY", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "jenis_kelamin": {"value": "LAKI-LAKI | PEREMPUAN", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "golongan_darah": {"value": "A | B | AB | O | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "alamat": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "pekerjaan": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "berlaku_hingga": {"value": "DD-MM-YYYY", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "instansi_penerbit": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 IJAZAH_SCHEMA = """{
-  "document_level": "SMA | SMK | MA | D3 | D4 | S1 | S2 | S3",
-  "institution_name": "string",
-  "nomor_ijazah": "string | null",
-  "nama_lengkap": "string",
-  "tempat_lahir": "string",
-  "tanggal_lahir": "DD/MM/YYYY",
-  "nisn": "string | null",
-  "nis": "string | null",
-  "nim": "string | null",
-  "jurusan_sma": "string | null",
-  "kompetensi_keahlian": "string | null",
-  "program_studi": "string | null",
-  "fakultas": "string | null",
-  "tahun_lulus": "string",
-  "tanggal_lulus": "DD/MM/YYYY | null",
-  "tanggal_ijazah": "DD/MM/YYYY | null"
+  "document_level": {"value": "SMA | SMK | MA | D3 | D4 | S1 | S2 | S3", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "institution_name": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nomor_ijazah": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nama_lengkap": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tempat_lahir": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_lahir": {"value": "DD/MM/YYYY", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nisn": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nis": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "nim": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "jurusan_sma": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "kompetensi_keahlian": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "program_studi": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "fakultas": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tahun_lulus": {"value": "string", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_lulus": {"value": "DD/MM/YYYY | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_ijazah": {"value": "DD/MM/YYYY | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 BL_SCHEMA = """{
-  "vessel_voyage_no": "string | null",
-  "mvs": "string | null",
-  "document_no": "string | null",
-  "document_date": "string | null",
-  "ship_date": "string | null",
-  "consignee": "string | null",
-  "country_of_destination": "string | null"
+  "vessel_voyage_no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "mvs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "document_no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "document_date": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "ship_date": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "consignee": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "country_of_destination": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 PEB_SCHEMA = """{
-  "nomor_pendaftaran": "string | null",
-  "tanggal_pendaftaran": "string | null",
+  "nomor_pendaftaran": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "tanggal_pendaftaran": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 PL_SCHEMA = """{
-  "no": "string | null",
-  "date": "string | null"
+  "no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "date": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 COO_SCHEMA = """{
-  "consignee": "string | null",
-  "vessel_voyage_no": "string | null",
-  "mvs": "string | null",
-  "port_of_loading": "string | null",
-  "port_of_discharge": "string | null",
-  "invoice_no": "string | null",
-  "invoice_date": "string | null",
-  "document_no_bl": "string | null",
-  "date_bl": "string | null",
-  "document_no_peb": "string | null",
-  "date_peb": "string | null",
-  "document_no_pl": "string | null",
-  "date_pl": "string | null",
-  "ship_date": "string | null",
-  "country_of_destination": "string | null",
-  "form": "string | null",
+  "consignee": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "vessel_voyage_no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "mvs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "port_of_loading": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "port_of_discharge": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "invoice_no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "invoice_date": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "document_no_bl": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "date_bl": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "document_no_peb": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "date_peb": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "document_no_pl": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "date_pl": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "ship_date": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "country_of_destination": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "form": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
   "table": [
     {
-      "no": "string | null",
-      "kategori_barang": "string | null",
-      "model": "string | null",
-      "quantity_ctns": "string | null",
-      "quantity_pcs": "string | null",
-      "unit_price": "string | null",
-      "amount_usd": "string | null",
-      "bruto": "string | null",
-      "netto": "string | null"
+      "no": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "kategori_barang": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "model": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "quantity_ctns": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "quantity_pcs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "unit_price": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "amount_usd": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "bruto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+      "netto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
     }
   ],
-  "total_amount": "string | null",
-  "total_weight_bruto": "string | null",
-  "total_weight_netto": "string | null",
-  "total_quantity_ctns": "string | null",
-  "total_quantity_pcs": "string | null"
+  "total_amount": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_weight_bruto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_weight_netto": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_quantity_ctns": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]},
+  "total_quantity_pcs": {"value": "string | null", "bbox_2d": [x_min, y_min, x_max, y_max]}
 }"""
 
 DOCUMENT_SCHEMAS = {

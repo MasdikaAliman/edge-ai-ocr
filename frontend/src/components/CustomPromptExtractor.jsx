@@ -251,6 +251,7 @@ export default function CustomPromptExtractor({
             selectedPages={selectedPages}
             onPagesChange={setSelectedPages}
             showPageSelector={false}
+            ocrResult={ocrResult}
           />
         </div>
       </div>
@@ -278,6 +279,7 @@ export default function CustomPromptExtractor({
           selectedPages={selectedPages}
           onPagesChange={setSelectedPages}
           showPageSelector={false}
+          ocrResult={ocrResult}
         />
       </div>
     </div>

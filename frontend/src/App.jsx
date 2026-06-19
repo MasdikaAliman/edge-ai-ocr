@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import toast, { Toaster } from "react-hot-toast";
 
 import HealthIndicator from "./components/HealthIndicator";
@@ -18,7 +18,9 @@ import {
 } from "./utils/fileSystem";
 
 export default function App() {
-  const baseUrl = "http://192.168.13.176:5030";
+  // const baseUrl = "http://192.168.13.176:5030";
+  const baseUrl = "http://localhost:5030";
+
 
   // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt"
   const [activePage, setActivePage] = useState("dashboard");
@@ -33,20 +35,71 @@ export default function App() {
   const [selectedDocType, setSelectedDocType] = useState("");
   const [activeMode, setActiveMode] = useState("doc-type"); // doc-type, fields
   const [fieldsList, setFieldsList] = useState(["nomor_faktur", "tanggal_transaksi", "total_harga"]);
-  const [pageSelectionText, setPageSelectionText] = useState("");
   const [customPrompt, setCustomPrompt] = useState(
     "Ekstrak semua informasi faktur termasuk tabel item barang, vendor, total harga sebelum dan sesudah pajak."
   );
   const [concurrencyLimit, setConcurrencyLimit] = useState(3);
 
-  // File & Preview States
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [selectedPages, setSelectedPages] = useState([]);
+  // Page-specific states stored in a single object to maintain state when switching tabs
+  const [pageStates, setPageStates] = useState({
+    dokumen: { uploadedFiles: [], selectedPages: [], pageSelectionText: "", ocrResult: null, isProcessing: false, progressInfo: null },
+    coo: { uploadedFiles: [], selectedPages: [], pageSelectionText: "", ocrResult: null, isProcessing: false, progressInfo: null },
+    batch: { uploadedFiles: [], selectedPages: [], pageSelectionText: "", ocrResult: null, isProcessing: false, progressInfo: null },
+    prompt: { uploadedFiles: [], selectedPages: [], pageSelectionText: "", ocrResult: null, isProcessing: false, progressInfo: null },
+  });
 
-  // Processing & Results
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progressInfo, setProgressInfo] = useState(null);
-  const [ocrResult, setOcrResult] = useState(null);
+  // Create a ref to track the active page so that closures (like in the Guided Tour) always use the correct state
+  const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
+
+  const updateActivePageState = (key, value) => {
+    const targetPage = activePageRef.current;
+    if (targetPage === "dashboard") return;
+
+    setPageStates((prev) => {
+      const currentPageState = prev[targetPage] || {
+        uploadedFiles: [],
+        selectedPages: [],
+        pageSelectionText: "",
+        ocrResult: null,
+        isProcessing: false,
+        progressInfo: null,
+      };
+
+      const newValue = typeof value === "function" ? value(currentPageState[key]) : value;
+
+      return {
+        ...prev,
+        [targetPage]: {
+          ...currentPageState,
+          [key]: newValue,
+        },
+      };
+    });
+  };
+
+  const setUploadedFiles = (val) => updateActivePageState("uploadedFiles", val);
+  const setSelectedPages = (val) => updateActivePageState("selectedPages", val);
+  const setPageSelectionText = (val) => updateActivePageState("pageSelectionText", val);
+  const setOcrResult = (val) => updateActivePageState("ocrResult", val);
+  const setIsProcessing = (val) => updateActivePageState("isProcessing", val);
+  const setProgressInfo = (val) => updateActivePageState("progressInfo", val);
+
+  const activeState = pageStates[activePage] || {
+    uploadedFiles: [],
+    selectedPages: [],
+    pageSelectionText: "",
+    ocrResult: null,
+    isProcessing: false,
+    progressInfo: null,
+  };
+
+  const uploadedFiles = activeState.uploadedFiles;
+  const selectedPages = activeState.selectedPages;
+  const pageSelectionText = activeState.pageSelectionText;
+  const ocrResult = activeState.ocrResult;
+  const isProcessing = activeState.isProcessing;
+  const progressInfo = activeState.progressInfo;
 
   // Local Directory Handles
   const [directoryHandle, setDirectoryHandle] = useState(null);
@@ -132,7 +185,7 @@ export default function App() {
   };
 
   // Drag and Drop validation helpers
-  const validateAndSetFiles = (filesListToValidate) => {
+  const validateAndSetFiles = (filesListToValidate, isAppend = false) => {
     const fileArray = Array.from(filesListToValidate);
     if (fileArray.length === 0) return;
 
@@ -156,43 +209,70 @@ export default function App() {
       return;
     }
 
+    let finalFiles = [];
+    if (isAppend) {
+      // Validate that we don't mix incoming files type with existing files type
+      const existingPdfFiles = uploadedFiles.filter(
+        (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)
+      );
+      const existingImageFiles = uploadedFiles.filter(
+        (f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|tiff)$/i.test(f.name)
+      );
+      
+      const hasExistingPdf = existingPdfFiles.length > 0;
+      const hasExistingImg = existingImageFiles.length > 0;
+
+      if ((hasExistingPdf && isImg) || (hasExistingImg && isPdf)) {
+        toast.error("Tidak boleh mencampur PDF dan gambar dalam satu unggahan");
+        return;
+      }
+
+      finalFiles = [...uploadedFiles, ...fileArray];
+    } else {
+      finalFiles = fileArray;
+    }
+
     if (activePage === "coo") {
-      if (fileArray.length > 4) {
+      if (finalFiles.length > 4) {
         toast.error("Maksimal mengunggah 4 berkas untuk COO.");
         return;
       }
-      setUploadedFiles(fileArray);
+      setUploadedFiles(finalFiles);
       setOcrResult(null);
       setSelectedPages([]);
-      toast.success(`Berhasil mengunggah ${fileArray.length} berkas COO.`);
+      toast.success(isAppend ? `Berhasil menambahkan ${fileArray.length} berkas COO.` : `Berhasil mengunggah ${fileArray.length} berkas COO.`);
     } else if (activePage === "batch") {
-      if (fileArray.length > 50) {
+      if (finalFiles.length > 50) {
         toast.error("Maksimal mengunggah 50 berkas sekaligus.");
         return;
       }
-      setUploadedFiles(fileArray);
+      setUploadedFiles(finalFiles);
       setOcrResult(null);
       setSelectedPages([]);
-      toast.success(`Berhasil mengunggah ${fileArray.length} berkas batch.`);
+      toast.success(isAppend ? `Berhasil menambahkan ${fileArray.length} berkas batch.` : `Berhasil mengunggah ${fileArray.length} berkas batch.`);
     } else {
       // activePage === "dokumen" or "prompt"
-      if (fileArray.length > 20) {
+      if (finalFiles.length > 20) {
         toast.error("Maksimal mengunggah 20 berkas sekaligus.");
         return;
       }
-      setUploadedFiles(fileArray);
+      setUploadedFiles(finalFiles);
       setOcrResult(null);
       setSelectedPages([]);
-      if (fileArray.length === 1) {
-        toast.success(`Berhasil mengunggah ${fileArray[0].name}`);
+      if (finalFiles.length === 1) {
+        toast.success(`Berhasil mengunggah ${finalFiles[0].name}`);
       } else {
-        toast.success(`Berhasil mengunggah ${fileArray.length} berkas.`);
+        toast.success(isAppend ? `Berhasil menambahkan ${fileArray.length} berkas.` : `Berhasil mengunggah ${finalFiles.length} berkas.`);
       }
     }
   };
 
   const handleFileChange = (e) => {
-    validateAndSetFiles(e.target.files);
+    validateAndSetFiles(e.target.files, false);
+  };
+
+  const handleAppendFileChange = (e) => {
+    validateAndSetFiles(e.target.files, true);
   };
 
   const handleDragOver = (e) => {
@@ -377,12 +457,6 @@ export default function App() {
 
   const handlePageChange = (newPage) => {
     setActivePage(newPage);
-    setUploadedFiles([]);
-    setOcrResult(null);
-    setSelectedPages([]);
-    setIsProcessing(false);
-    setProgressInfo(null);
-    setPageSelectionText("");
   };
 
   const handlePromptExampleClick = (ex) => {
@@ -470,6 +544,7 @@ export default function App() {
     isServiceReady,
     handleRunOcr,
     handleFileChange,
+    handleAppendFileChange,
     selectedPages,
     setSelectedPages,
     ocrResult,
@@ -531,6 +606,7 @@ export default function App() {
                 activePage={activePage}
                 currentStep={getStepperStep()}
                 onStepClick={handleStepClick}
+                isProcessing={isProcessing}
               />
 
               {/* Action Pages Switches */}

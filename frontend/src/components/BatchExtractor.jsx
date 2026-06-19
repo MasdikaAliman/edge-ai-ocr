@@ -32,6 +32,7 @@ export default function BatchExtractor({
   setCustomPrompt,
   selectedPages,
   setSelectedPages,
+  handleAppendFileChange,
 }) {
   const [newField, setNewField] = useState("");
 
@@ -160,6 +161,14 @@ export default function BatchExtractor({
               <span className="material-symbols-outlined text-[16px]">add</span>
               Tambah File
             </button>
+            <input
+              type="file"
+              id="file-input"
+              multiple
+              accept=".pdf, image/*"
+              onChange={handleAppendFileChange}
+              className="hidden"
+            />
           </div>
 
           {activeMode === "prompt" && (
@@ -356,6 +365,7 @@ export default function BatchExtractor({
             selectedPages={selectedPages}
             onPagesChange={setSelectedPages}
             showPageSelector={false}
+            ocrResult={ocrResult}
           />
         </div>
       </div>
@@ -446,6 +456,7 @@ export default function BatchExtractor({
           selectedPages={selectedPages}
           onPagesChange={setSelectedPages}
           showPageSelector={false}
+          ocrResult={ocrResult}
         />
       </div>
     </div>

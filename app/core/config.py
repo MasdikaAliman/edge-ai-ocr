@@ -26,7 +26,13 @@ model = init_chat_model(
     api_key="EMPTY",
     temperature=0.0,
     top_p=0.95,
-    extra_body={
-        "top_k": 1
+    model_kwargs={
+        "extra_body": {
+            "top_k": 1,
+            "mm_processor_kwargs": {
+                "min_pixels": 360 * 32 * 32,
+                "max_pixels": 4096 * 32 * 32
+            }
+        }
     }
 )

@@ -10,12 +10,14 @@ from app.core.config import ALLOWED_MIME_TYPES, MAX_IMAGE_SIZE
 
 def pil_to_content_item(img: Image.Image) -> Dict[str, Any]:
     img = img.convert("RGB")
-    if max(img.size) > MAX_IMAGE_SIZE:
-        img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.LANCZOS)
+    # if max(img.size) > MAX_IMAGE_SIZE:
+    #     img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.LANCZOS)
     with io.BytesIO() as buf:
         img.save(buf, format="JPEG", quality=95)
         b64 = base64.b64encode(buf.getvalue()).decode()
-    return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+    return {"type": "image_url",
+     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+     }
 
 
 def bytes_to_content_item(raw_bytes: bytes, content_type: str) -> Dict[str, Any]:

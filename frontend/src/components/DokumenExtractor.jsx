@@ -222,6 +222,7 @@ export default function DokumenExtractor({
             selectedPages={selectedPages}
             onPagesChange={setSelectedPages}
             showPageSelector={false}
+            ocrResult={ocrResult}
           />
         </div>
 
@@ -261,6 +262,7 @@ export default function DokumenExtractor({
           selectedPages={selectedPages}
           onPagesChange={setSelectedPages}
           showPageSelector={false}
+          ocrResult={ocrResult}
         />
       </div>
     </div>

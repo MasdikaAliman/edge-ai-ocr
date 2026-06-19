@@ -3,6 +3,29 @@ import toast from "react-hot-toast";
 import { exportToExcel, getExcelBlob, getCooExcelBlob, exportCooToExcelTemplate } from "../utils/excelExporter";
 import { saveBlobToDirectory } from "../utils/fileSystem";
 
+function cleanGroundingResult(obj) {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === "object") {
+    if ("value" in obj && "bbox_2d" in obj) {
+      return obj.value;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(cleanGroundingResult);
+    }
+
+    const cleanObj = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (key === "raw_results") continue;
+      cleanObj[key] = cleanGroundingResult(val);
+    }
+    return cleanObj;
+  }
+
+  return obj;
+}
+
 // Regex helper to format JSON with colors
 function getHighlightedJson(jsonObj) {
   const json = JSON.stringify(jsonObj, null, 2);
@@ -51,7 +74,8 @@ export default function ResultViewer({
   // Sync editor when ocrResult changes from external source
   useEffect(() => {
     if (ocrResult) {
-      setJsonText(JSON.stringify(ocrResult, null, 2));
+      const cleaned = cleanGroundingResult(ocrResult);
+      setJsonText(JSON.stringify(cleaned, null, 2));
     }
   }, [ocrResult]);
 
@@ -146,7 +170,8 @@ export default function ResultViewer({
 
   const handleDownloadJson = async () => {
     const filename = getExportFilename("json");
-    const jsonStr = JSON.stringify(ocrResult, null, 2);
+    const cleaned = cleanGroundingResult(ocrResult);
+    const jsonStr = JSON.stringify(cleaned, null, 2);
     const blob = new Blob([jsonStr], { type: "application/json" });
 
     if (directoryHandle) {
@@ -171,23 +196,24 @@ export default function ResultViewer({
 
   const handleDownloadExcel = async () => {
     const filename = getExportFilename("xlsx");
+    const cleaned = cleanGroundingResult(ocrResult);
     try {
       if (selectedDocType === "COO") {
         // Use the official COO template with pre-mapped cells
         if (directoryHandle) {
-          const blob = await getCooExcelBlob(ocrResult);
+          const blob = await getCooExcelBlob(cleaned);
           await saveBlobToDirectory(directoryHandle, filename, blob);
           toast.success(`Excel COO template berhasil disimpan di folder: ${directoryHandle.name}`);
         } else {
-          await exportCooToExcelTemplate(ocrResult, filename);
+          await exportCooToExcelTemplate(cleaned, filename);
           toast.success("Excel COO template berhasil diunduh.");
         }
       } else if (directoryHandle) {
-        const blob = getExcelBlob(ocrResult);
+        const blob = getExcelBlob(cleaned);
         await saveBlobToDirectory(directoryHandle, filename, blob);
         toast.success(`Excel berhasil disimpan di folder: ${directoryHandle.name}`);
       } else {
-        exportToExcel(ocrResult, filename);
+        exportToExcel(cleaned, filename);
         toast.success("Excel berhasil diunduh.");
       }
     } catch (err) {
@@ -222,7 +248,8 @@ export default function ResultViewer({
                   toast.error("Format JSON tidak valid!");
                 }
               } else {
-                setJsonText(JSON.stringify(ocrResult, null, 2));
+                const cleaned = cleanGroundingResult(ocrResult);
+                setJsonText(JSON.stringify(cleaned, null, 2));
                 setIsEditing(true);
                 setJsonError(null);
               }
@@ -313,7 +340,7 @@ export default function ResultViewer({
         <div className="p-6 bg-slate-900 font-data-mono text-data-mono overflow-auto flex-1 custom-scrollbar">
           <pre
             className="text-slate-300 whitespace-pre-wrap break-all"
-            dangerouslySetInnerHTML={{ __html: getHighlightedJson(ocrResult) }}
+            dangerouslySetInnerHTML={{ __html: getHighlightedJson(cleanGroundingResult(ocrResult)) }}
           />
         </div>
       )}

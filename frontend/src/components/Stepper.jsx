@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function Stepper({ activePage, currentStep, onStepClick }) {
+export default function Stepper({ activePage, currentStep, onStepClick, isProcessing }) {
   const steps = activePage === "batch" 
     ? ["Unggah File", "Konfigurasi", "Proses", "Hasil"] 
     : ["Unggah File", activePage === "prompt" ? "Konfigurasi Prompt" : "Konfigurasi", "Hasil"];
@@ -11,7 +11,7 @@ export default function Stepper({ activePage, currentStep, onStepClick }) {
         const stepNum = idx + 1;
         const isActive = currentStep === stepNum;
         const isCompleted = currentStep > stepNum;
-        const isClickable = stepNum < currentStep; // Allow going back to completed steps
+        const isClickable = !isProcessing && stepNum < currentStep; // Allow going back to completed steps only when not processing
         const isLast = stepNum === steps.length;
 
         return (

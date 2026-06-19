@@ -37,6 +37,7 @@ export async function processBatch({
             failures: failures.map((f) => `${f.filename}: ${f.error}`),
           },
           extracted_data: mergedData,
+          raw_results: results,
         });
         return;
       }

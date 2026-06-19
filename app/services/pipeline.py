@@ -140,7 +140,7 @@ def reprocess_page_node(state: OCRState) -> Dict[str, Any]:
     content.append(page_data["image"])
     for table_img in page_data.get("table_images", []):
         content.append(table_img)
-
+    
     messages = [
         SystemMessage(content="You are an expert at extracting structured data from documents."),
         HumanMessage(content=content),
@@ -208,6 +208,12 @@ def build_field_tallies(page_results: list[dict]) -> str:
 
     lines: list[str] = []
 
+    # Helper to extract raw value for comparison (handles Qwen3-VL grounding dict)
+    def get_comp_value(val):
+        if isinstance(val, dict) and "value" in val:
+            return val["value"]
+        return val
+
     for key in all_keys:
         # --- Array fields ---
         if any(isinstance(r.get(key), list) for r in page_results):
@@ -231,7 +237,11 @@ def build_field_tallies(page_results: list[dict]) -> str:
         for i, r in enumerate(page_results):
             v = r.get(key)
             if v is not None and v != "":
-                values.append((i + 1, v))  # 1-indexed page numbers
+                comp_val = get_comp_value(v)
+                if comp_val is not None and comp_val != "":
+                    values.append((i + 1, v))  # 1-indexed page numbers
+                else:
+                    null_pages.append(i + 1)
             else:
                 null_pages.append(i + 1)
 
@@ -248,44 +258,60 @@ def build_field_tallies(page_results: list[dict]) -> str:
             last_page, last_val = values[-1]
             lines.append(f"FIELD: {key} (NUMERIC — LAST PAGE RULE)")
             for pg, v in values:
-                lines.append(f'  "{v}" → page {pg}')
-            lines.append(f'  RECOMMENDED: "{last_val}" (last page with value = page {last_page})')
+                val_str = json.dumps(v, ensure_ascii=False) if isinstance(v, dict) else str(v)
+                lines.append(f'  {val_str} → page {pg}')
+            val_str_last = json.dumps(last_val, ensure_ascii=False) if isinstance(last_val, dict) else str(last_val)
+            lines.append(f'  RECOMMENDED: {val_str_last} (last page with value = page {last_page})')
             lines.append("")
             continue
 
         # Count occurrences for majority vote
-        counts: Counter = Counter(v for _, v in values)
+        counts: Counter = Counter(get_comp_value(v) for _, v in values)
         sorted_counts = counts.most_common()
         max_count = sorted_counts[0][1]
+        winner_comp = sorted_counts[0][0]
+
+        # Find the first actual value mapping to the winning comparison value
+        winner = None
+        for pg, v in values:
+            if get_comp_value(v) == winner_comp:
+                winner = v
+                break
 
         # Single unique value or clear majority
         if len(sorted_counts) == 1 or sorted_counts[0][1] > sorted_counts[1][1]:
-            winner = sorted_counts[0][0]
             tag = "MAJORITY" if max_count > 1 else "SINGLE VALUE"
             lines.append(f"FIELD: {key} (SCALAR — {tag})")
-            for val, cnt in sorted_counts:
-                pages = [pg for pg, v in values if v == val]
-                marker = " ← MAJORITY" if val == winner and max_count > 1 else ""
-                lines.append(f'  "{val}" → {cnt} page(s) {pages}{marker}')
+            for val_comp, cnt in sorted_counts:
+                pages = [pg for pg, v in values if get_comp_value(v) == val_comp]
+                # Print the full structure of the first match
+                matching_vals = [v for pg, v in values if get_comp_value(v) == val_comp]
+                val_str = json.dumps(matching_vals[0], ensure_ascii=False) if isinstance(matching_vals[0], dict) else str(matching_vals[0])
+                marker = " ← MAJORITY" if val_comp == winner_comp and max_count > 1 else ""
+                lines.append(f'  {val_str} → {cnt} page(s) {pages}{marker}')
             if null_pages:
                 lines.append(f"  null/empty pages: {null_pages} (ignored)")
-            lines.append(f'  RECOMMENDED: "{winner}"')
+            winner_str = json.dumps(winner, ensure_ascii=False) if isinstance(winner, dict) else str(winner)
+            lines.append(f'  RECOMMENDED: {winner_str}')
             lines.append("")
         else:
             # Tie — multiple values with same count
             # Recommend earliest page value as tiebreak
             earliest_winner = None
             for pg, v in values:
-                if counts[v] == max_count:
+                if counts[get_comp_value(v)] == max_count:
                     earliest_winner = v
                     break
             lines.append(f"FIELD: {key} (SCALAR — TIE)")
-            for val, cnt in sorted_counts:
-                pages = [pg for pg, v in values if v == val]
-                lines.append(f'  "{val}" → {cnt} page(s) {pages}')
+            for val_comp, cnt in sorted_counts:
+                pages = [pg for pg, v in values if get_comp_value(v) == val_comp]
+                matching_vals = [v for pg, v in values if get_comp_value(v) == val_comp]
+                val_str = json.dumps(matching_vals[0], ensure_ascii=False) if isinstance(matching_vals[0], dict) else str(matching_vals[0])
+                lines.append(f'  {val_str} → {cnt} page(s) {pages}')
             if null_pages:
                 lines.append(f"  null/empty pages: {null_pages} (ignored)")
-            lines.append(f'  RECOMMENDED: "{earliest_winner}" (earliest page tiebreak)')
+            earliest_winner_str = json.dumps(earliest_winner, ensure_ascii=False) if isinstance(earliest_winner, dict) else str(earliest_winner)
+            lines.append(f'  RECOMMENDED: {earliest_winner_str} (earliest page tiebreak)')
             lines.append("  NOTE: Tie detected — you may override if semantic context suggests a better choice.")
             lines.append("")
 
@@ -306,6 +332,12 @@ def aggregate_programmatic(page_results: list[dict], doc_type: str) -> dict:
     result: dict = {}
     array_keys: list[str] = []
 
+    # Helper to extract raw value for comparison
+    def get_comp_value(val):
+        if isinstance(val, dict) and "value" in val:
+            return val["value"]
+        return val
+
     for key in all_keys:
         if any(isinstance(r.get(key), list) for r in page_results):
             array_keys.append(key)
@@ -315,7 +347,9 @@ def aggregate_programmatic(page_results: list[dict], doc_type: str) -> dict:
         for i, r in enumerate(page_results):
             v = r.get(key)
             if v is not None and v != "":
-                values.append((i, v))
+                comp_val = get_comp_value(v)
+                if comp_val is not None and comp_val != "":
+                    values.append((i, v))
 
         if not values:
             result[key] = None
@@ -325,10 +359,10 @@ def aggregate_programmatic(page_results: list[dict], doc_type: str) -> dict:
             result[key] = values[-1][1]
             continue
 
-        counts: Counter = Counter(v for _, v in values)
+        counts: Counter = Counter(get_comp_value(v) for _, v in values)
         max_count = counts.most_common(1)[0][1]
         for page_idx, v in values:
-            if counts[v] == max_count:
+            if counts[get_comp_value(v)] == max_count:
                 result[key] = v
                 break
 
@@ -343,11 +377,17 @@ def aggregate_programmatic(page_results: list[dict], doc_type: str) -> dict:
             for item in arr:
                 item_id = None
                 for ik in id_keys:
-                    if item.get(ik):
-                        item_id = item[ik]
+                    val_to_check = item.get(ik)
+                    comp_val = get_comp_value(val_to_check)
+                    if comp_val:
+                        item_id = comp_val
                         break
                 if item_id is None:
-                    item_id = json.dumps(item, sort_keys=True)
+                    # Simplify comparison: extract only "value"s for seen_ids check
+                    simplified_item = {}
+                    for k, val in item.items():
+                        simplified_item[k] = get_comp_value(val)
+                    item_id = json.dumps(simplified_item, sort_keys=True)
                 if item_id not in seen_ids:
                     seen_ids.add(item_id)
                     merged.append(item)
