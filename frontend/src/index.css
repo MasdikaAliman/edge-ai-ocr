@@ -48,7 +48,7 @@
 }
 
 @utility preview-image {
-  @apply shadow-lg bg-white rounded border border-outline-variant/30 object-contain h-auto;
+  @apply shadow-lg bg-white rounded border border-outline-variant/30 h-auto;
 }
 
 @utility progress-track {

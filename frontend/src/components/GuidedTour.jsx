@@ -324,7 +324,7 @@ export function startGuidedTour({ tourId, setActivePage, setUploadedFiles, setOc
             setOcrResult({
               invoice_number: "INV-2026-999",
               date: "2026-06-16",
-              vendor: "PT Antigravity Global",
+              vendor: "PT Global Sakti Nusantara",
               total: "Rp 10.000.000",
               tax: "Rp 1.100.000"
             });

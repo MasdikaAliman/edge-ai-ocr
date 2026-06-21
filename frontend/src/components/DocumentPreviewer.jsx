@@ -435,7 +435,8 @@ export default function DocumentPreviewer({
                 className={`preview-image ${zoom <= 100 ? "max-w-full max-h-full" : "max-w-none max-h-none"
                   }`}
                 style={{
-                  width: `${zoom}%`,
+                  width: zoom <= 100 ? "auto" : `${zoom}%`,
+                  height: "auto",
                 }}
               />
             )
