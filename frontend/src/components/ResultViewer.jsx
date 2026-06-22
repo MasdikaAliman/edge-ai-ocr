@@ -7,6 +7,15 @@ function cleanGroundingResult(obj) {
   if (obj === null || obj === undefined) return obj;
 
   if (typeof obj === "object") {
+    // If it's the root API response with a 'data' field, unwrap it
+    if ("success" in obj && "data" in obj) {
+      return cleanGroundingResult(obj.data);
+    }
+
+    if ("text" in obj && "bbox" in obj) {
+      return obj.text;
+    }
+
     if ("value" in obj && "bbox_2d" in obj) {
       return obj.value;
     }
@@ -17,7 +26,7 @@ function cleanGroundingResult(obj) {
 
     const cleanObj = {};
     for (const [key, val] of Object.entries(obj)) {
-      if (key === "raw_results") continue;
+      if (key === "raw_results" || key === "page_dimensions") continue;
       cleanObj[key] = cleanGroundingResult(val);
     }
     return cleanObj;

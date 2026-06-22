@@ -13,10 +13,11 @@ def pil_to_content_item(img: Image.Image) -> Dict[str, Any]:
     # if max(img.size) > MAX_IMAGE_SIZE:
     #     img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.LANCZOS)
     with io.BytesIO() as buf:
-        img.save(buf, format="JPEG", quality=95)
+        img.save(buf, format="PNG")
+        print(img.format)
         b64 = base64.b64encode(buf.getvalue()).decode()
     return {"type": "image_url",
-     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+     "image_url": {"url": f"data:image/png;base64,{b64}"}
      }
 
 

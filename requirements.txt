@@ -13,13 +13,14 @@ python-dotenv
 langchain
 langchain-core
 langchain-openai
-langchain-community
-langgraph
 
 # === PDF Processing ===
 pdfplumber
 PyMuPDF
-docling
+
+# === OCR Engine ===
+paddlepaddle>=2.6.0
+paddleocr>=3.4.0
 
 # === Image ===
 Pillow

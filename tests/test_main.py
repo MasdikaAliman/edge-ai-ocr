@@ -3,13 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-# Mock the heavy modules and service calls so we don't need docling/accelerators/vLLM for testing main.py's routing logic
-sys.modules['docling'] = MagicMock()
-sys.modules['docling.document_converter'] = MagicMock()
-sys.modules['docling.datamodel.pipeline_options'] = MagicMock()
-sys.modules['docling.datamodel.accelerator_options'] = MagicMock()
-sys.modules['docling.datamodel.base_models'] = MagicMock()
-sys.modules['pdfplumber'] = MagicMock()
+# Mock the heavy modules so we don't need paddle/vLLM/PyMuPDF for testing main.py's routing logic
+sys.modules['paddleocr'] = MagicMock()
+sys.modules['paddlepaddle'] = MagicMock()
 sys.modules['fitz'] = MagicMock()
 
 from main import app
@@ -46,14 +42,14 @@ def test_health_endpoint_unhealthy(mock_get):
     assert response.json()["model_ready"] is False
 
 @patch("main._process_files", new_callable=AsyncMock)
-@patch("main.run_ocr", new_callable=AsyncMock)
+@patch("main.run_semantic", new_callable=AsyncMock)
 @patch("main.create_call_log")
-def test_process_ocr_document_non_coo(mock_create_call_log, mock_run_ocr, mock_process_files):
+def test_process_ocr_document_non_coo(mock_create_call_log, mock_run_semantic, mock_process_files):
     # Mock return values
     mock_process_files.return_value = [
-        {"page_no": 1, "image": {"type": "image", "content": "base64str"}, "table_images": [], "markdown": "dummy text"}
+        {"page_no": 1, "image": MagicMock(), "width": 800, "height": 1000}
     ]
-    mock_run_ocr.return_value = {
+    mock_run_semantic.return_value = {
         "success": True,
         "data": {"nik": "1234567890", "nama": "John Doe"},
         "messages_log": []
@@ -67,29 +63,29 @@ def test_process_ocr_document_non_coo(mock_create_call_log, mock_run_ocr, mock_p
     assert response.status_code == 200
     assert response.json()["success"] is True
     assert response.json()["data"]["nama"] == "John Doe"
+    assert response.json()["page_dimensions"]["1"] == {"width": 800, "height": 1000}
     
     # Assert main.py routed correctly
     mock_process_files.assert_called_once()
-    mock_run_ocr.assert_called_once_with("KTP", mock_process_files.return_value, None, "")
+    mock_run_semantic.assert_called_once_with("KTP", mock_process_files.return_value, fields=None, custom_prompt="")
     mock_create_call_log.assert_called_once()
 
 
 @patch("main._process_files", new_callable=AsyncMock)
-@patch("main.run_ocr", new_callable=AsyncMock)
+@patch("main.run_semantic", new_callable=AsyncMock)
 @patch("main.create_call_log")
-def test_process_ocr_document_coo_success(mock_create_call_log, mock_run_ocr, mock_process_files):
-    # Mock process files and run_ocr to simulate sub-document extraction for COO
+def test_process_ocr_document_coo_success(mock_create_call_log, mock_run_semantic, mock_process_files):
+    # Mock process files and run_semantic to simulate sub-document extraction for COO
     # We have 4 separate sub-documents: BL, PEB, PL, INV_COO
-    # _process_files will be called 4 times, once for each
     mock_process_files.side_effect = [
-        [{"page_no": 1, "image": {}, "markdown": "BL page", "table_images": []}], # BL
-        [{"page_no": 1, "image": {}, "markdown": "PEB page", "table_images": []}], # PEB
-        [{"page_no": 1, "image": {}, "markdown": "PL page", "table_images": []}], # PL
-        [{"page_no": 1, "image": {}, "markdown": "INV page", "table_images": []}], # INV_COO
+        [{"page_no": 1, "image": MagicMock(), "width": 800, "height": 1000}], # BL
+        [{"page_no": 1, "image": MagicMock(), "width": 800, "height": 1000}], # PEB
+        [{"page_no": 1, "image": MagicMock(), "width": 800, "height": 1000}], # PL
+        [{"page_no": 1, "image": MagicMock(), "width": 800, "height": 1000}], # INV_COO
     ]
     
-    # run_ocr will be called 4 times
-    mock_run_ocr.side_effect = [
+    # run_semantic will be called 4 times
+    mock_run_semantic.side_effect = [
         {"success": True, "data": {"consignee": "Receiver Corp", "vessel_voyage_no": "V123", "document_no": "BL999", "document_date": "2026-06-16"}, "messages_log": []}, # BL
         {"success": True, "data": {"nomor_pendaftaran": "PEB111", "tanggal_pendaftaran": "2026-06-15"}, "messages_log": []}, # PEB
         {"success": True, "data": {"no": "PL222", "date": "2026-06-14"}, "messages_log": []}, # PL
@@ -119,9 +115,11 @@ def test_process_ocr_document_coo_success(mock_create_call_log, mock_run_ocr, mo
     assert merged["document_no_peb"] == "PEB111"
     assert merged["document_no_pl"] == "PL222"
     assert merged["invoice_no"] == "INV333"
+    assert res_data["page_dimensions"]["1"] == {"width": 800, "height": 1000}
+    assert res_data["page_dimensions"]["4"] == {"width": 800, "height": 1000}
     
     assert mock_process_files.call_count == 4
-    assert mock_run_ocr.call_count == 4
+    assert mock_run_semantic.call_count == 4
     mock_create_call_log.assert_called_once()
 
 def test_process_ocr_document_coo_invalid_composition():

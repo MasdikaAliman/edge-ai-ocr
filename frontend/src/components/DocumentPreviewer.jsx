@@ -30,13 +30,29 @@ function findBboxLeaves(val, currentKey = "") {
   if (val === null || val === undefined) return [];
 
   if (typeof val === "object") {
+    if ("bbox" in val) {
+      if (Array.isArray(val.bbox) && val.bbox.length === 4) {
+        return [{
+          key: currentKey,
+          bbox: val.bbox,
+          isAbsolute: true,
+          confidence: "confidence" in val && val.confidence !== null && !isNaN(Number(val.confidence)) ? Number(val.confidence) : null,
+          text: val.text,
+          page_no: "page_no" in val ? val.page_no : null
+        }];
+      }
+      return [];
+    }
+
     if ("bbox_2d" in val) {
       if (Array.isArray(val.bbox_2d) && val.bbox_2d.length === 4) {
         return [{
           key: currentKey,
-          bbox_2d: val.bbox_2d,
-          confidence: "confidence" in val && typeof val.confidence === "number" ? val.confidence : null,
-          value: val.value
+          bbox: val.bbox_2d,
+          isAbsolute: false,
+          confidence: "confidence" in val && val.confidence !== null && !isNaN(Number(val.confidence)) ? Number(val.confidence) : null,
+          text: val.value,
+          page_no: null
         }];
       }
       return [];
@@ -277,25 +293,24 @@ export default function DocumentPreviewer({
 
     if (!fileResponse) return null;
 
-    // 3. Find response matching current page index
-    const activePageNo = fileType === "pdf" ? currentPage : 1;
+    // Return the resolved data with bounding boxes if available, otherwise fallback to the response itself
+    return fileResponse.data !== undefined ? fileResponse.data : fileResponse;
+  };
 
-    const pageEntries = fileResponse.messages_log?.filter(
-      (entry) => entry.page_no === activePageNo
-    ) || [];
+  const getActivePageDimensions = () => {
+    if (!ocrResult) return null;
+    const activeFileName = fileType === "pdf"
+      ? files[activePdfIndex]?.name || files[0]?.name
+      : files[activeImageIndex]?.name;
 
-    if (pageEntries.length > 0) {
-      // Merge responses of all entries for this page (earliest to latest so reprocessed overrides/adds to it)
-      let mergedResponse = {};
-      pageEntries.forEach((entry) => {
-        if (entry.response) {
-          mergedResponse = { ...mergedResponse, ...entry.response };
-        }
-      });
-      return mergedResponse;
+    let fileResponse = null;
+    if (ocrResult.raw_results) {
+      const match = ocrResult.raw_results.find((r) => r.filename === activeFileName);
+      fileResponse = match;
+    } else {
+      fileResponse = ocrResult;
     }
-
-    return fileResponse.data;
+    return fileResponse?.page_dimensions || null;
   };
 
   const renderOverlays = () => {
@@ -305,39 +320,86 @@ export default function DocumentPreviewer({
     const bboxes = findBboxLeaves(pageResponse);
     if (!bboxes || bboxes.length === 0) return null;
 
+    const pageDimensions = getActivePageDimensions();
+    const activePageNo = fileType === "pdf" ? currentPage : activeImageIndex + 1;
+    let origDim = pageDimensions?.[activePageNo] || pageDimensions?.[String(activePageNo)];
+
+    // Dynamically fallback to natural/canvas dimensions if origDim is not provided in page_dimensions
+    if (!origDim) {
+      if (fileType === "images" && imageRef.current) {
+        origDim = {
+          width: imageRef.current.naturalWidth || 1,
+          height: imageRef.current.naturalHeight || 1
+        };
+      } else if (fileType === "pdf" && canvasRef.current) {
+        const scale = zoom / 100;
+        origDim = {
+          width: canvasRef.current.width / scale,
+          height: canvasRef.current.height / scale
+        };
+      }
+    }
+
+    // Filter bboxes for active page
+    const filteredBboxes = bboxes.filter(
+      (box) => box.page_no === null || box.page_no === activePageNo
+    );
+
+    if (filteredBboxes.length === 0) return null;
+
     const width = (overlaySize.width || 1);
     const height = (overlaySize.height || 1);
-    return bboxes.map((box, idx) => {
-      const [x1_norm, y1_norm, x2_norm, y2_norm] = box.bbox_2d;
+    return filteredBboxes.map((box, idx) => {
+      const [x1, y1, x2, y2] = box.bbox;
       const color = getFieldColor(box.key);
 
-      // Convert [0, 1000] normalized coordinates to absolute pixels based on current rendered width & height
-      let abs_x1 = (x1_norm / 999) * width;
-      let abs_y1 = (y1_norm / 999) * height;
-      let abs_x2 = (x2_norm / 999) * width;
-      let abs_y2 = (y2_norm / 999) * height;
-      // Handle coordinate sorting to ensure positive widths and heights
-      if (abs_x1 > abs_x2) {
-        [abs_x1, abs_x2] = [abs_x2, abs_x1];
-      }
-      if (abs_y1 > abs_y2) {
-        [abs_y1, abs_y2] = [abs_y2, abs_y1];
+      let left, top, boxWidth, boxHeight;
+      if (origDim) {
+        const scaleX = width / origDim.width;
+        const scaleY = height / origDim.height;
+        left = x1 * scaleX;
+        top = y1 * scaleY;
+        boxWidth = (x2 - x1) * scaleX;
+        boxHeight = (y2 - y1) * scaleY;
+      } else {
+        if (box.isAbsolute) {
+          // Absolute coordinates without dimensions mapping
+          left = x1;
+          top = y1;
+          boxWidth = x2 - x1;
+          boxHeight = y2 - y1;
+        } else {
+          // Fallback to normalized coords [0, 999] only for legacy non-absolute coordinates
+          left = (x1 / 999) * width;
+          top = (y1 / 999) * height;
+          boxWidth = ((x2 - x1) / 999) * width;
+          boxHeight = ((y2 - y1) / 999) * height;
+        }
       }
 
-      const left = abs_x1;
-      const top = abs_y1;
-      const boxWidth = abs_x2 - abs_x1;
-      const boxHeight = abs_y2 - abs_y1;
+      // Handle coordinate sorting to ensure positive widths and heights
+      let sortedLeft = left;
+      let sortedTop = top;
+      let sortedWidth = boxWidth;
+      let sortedHeight = boxHeight;
+      if (sortedWidth < 0) {
+        sortedLeft += sortedWidth;
+        sortedWidth = -sortedWidth;
+      }
+      if (sortedHeight < 0) {
+        sortedTop += sortedHeight;
+        sortedHeight = -sortedHeight;
+      }
 
       return (
         <div
           key={idx}
           className="absolute border-2 rounded hover:bg-black/10 group cursor-pointer transition-all duration-150 ease-in-out"
           style={{
-            left: `${left}px`,
-            top: `${top}px`,
-            width: `${boxWidth}px`,
-            height: `${boxHeight}px`,
+            left: `${sortedLeft}px`,
+            top: `${sortedTop}px`,
+            width: `${sortedWidth}px`,
+            height: `${sortedHeight}px`,
             borderColor: color,
             zIndex: 10,
           }}

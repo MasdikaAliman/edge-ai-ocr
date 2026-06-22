@@ -1,33 +1,31 @@
 import requests
+import io
+import base64
 from typing import Annotated, List, Optional, Set, Dict
 import re
+from PIL import Image
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile as UF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import WithJsonSchema
 
-from app.core.config import BASE_URL_LLM, MAX_IMAGE_SIZE, MAX_DOC_PAGES, DocumentType, logger
+from app.core.config import BASE_URL_LLM, MAX_DOC_PAGES, DocumentType, logger
 from app.core.doc_prompt import DOCUMENT_PROMPTS
-from app.core.sys_prompt import BASE_DIRECTIVES
-from app.services.pdf import PageData, extract_pages
-from app.services.pipeline import run_ocr
+from app.services.pdf import PageImage, extract_pages
+from app.services.semantic import run_semantic
 from app.utils.call_log import create_call_log
-from app.utils.image import bytes_to_content_item
 
 UploadFile = Annotated[UF, WithJsonSchema({"type": "string", "format": "binary"})]
 
 app = FastAPI(
     title="Document OCR API",
     description=(
-        "High-precision document OCR powered by Qwen3-VL via vLLM.\n\n"
-        "Accepts images as **base64 JSON** or **multipart file uploads**.\n\n"
-        "Features a **LangGraph-powered page-by-page pipeline** that sends each page's "
-        "full image, table crops, and extracted markdown to the VLM for maximum accuracy.\n\n"
-        "PDFs are processed via **Docling** (page images + table crops + markdown).\n\n"
+        "High-precision document OCR powered by PaddleOCR + Qwen2.5 text-only semantic mapping.\n\n"
+        "Accepts images or PDFs, runs high-precision local OCR, and maps fields semantically using the LLM.\n\n"
         "Supported document types: " + ", ".join(DOCUMENT_PROMPTS.keys())
     ),
-    version="5.1.0",
+    version="6.0.0",
 )
 
 app.add_middleware(
@@ -43,11 +41,33 @@ async def custom_openapi():
     return JSONResponse(content=app.openapi(), media_type="application/json; charset=utf-8")
 
 
+def _to_call_log_pdf_result(page_images: List[PageImage]) -> List[dict]:
+    """Helper to convert PIL images in page_images to standard Call Log format."""
+    pdf_result = []
+    for p in page_images:
+        try:
+            buffered = io.BytesIO()
+            p["image"].save(buffered, format="JPEG")
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            pdf_result.append({
+                "page_no": p["page_no"],
+                "markdown": "",
+                "image": {
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                    "mime_type": "image/jpeg"
+                },
+                "table_images": []
+            })
+        except Exception as e:
+            logger.warning("Failed to prepare image for call log: %s", e)
+    return pdf_result
+
+
 async def _process_files(
     files: List[UploadFile],
     pages: str = "",
     document_type: str = "",
-) -> List[PageData]:
+) -> List[PageImage]:
     if len(files) == 0:
         raise HTTPException(
             status_code=400,
@@ -60,7 +80,7 @@ async def _process_files(
 
     pdf_count = 0
     image_count = 0
-    image_pages: List[PageData] = []
+    image_pages: List[PageImage] = []
 
     for upload in files:
         content_type = upload.content_type or "application/octet-stream"
@@ -122,15 +142,14 @@ async def _process_files(
                             "message": f"Too many images. Maximum is {MAX_DOC_PAGES}.",
                         },
                     )
-                content_item = bytes_to_content_item(raw_bytes, content_type)
-                image_pages.append(PageData(
-                    page_no=len(image_pages) + 1,
-                    image=content_item,
-                    table_images=[],
-                    figure_images=[],
-                    colored_texts=[],
-                    markdown="",
-                ))
+                img = Image.open(io.BytesIO(raw_bytes))
+                width, height = img.size
+                image_pages.append({
+                    "page_no": len(image_pages) + 1,
+                    "image": img,
+                    "width": width,
+                    "height": height
+                })
         except HTTPException:
             raise
         except Exception as e:
@@ -174,13 +193,23 @@ async def process_ocr_document(
     if document_type == "COO":
         return await process_ocr_coo_document(files, pages)
     else:
-        image_pages = await _process_files(files, pages=pages, document_type=document_type)
-        result = await run_ocr(document_type, image_pages, None, "")
+        page_images = await _process_files(files, pages=pages, document_type=document_type)
+        result = await run_semantic(document_type, page_images, fields=None, custom_prompt="")
+        
+        # Include page dimensions in response
+        page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
+        result["page_dimensions"] = page_dims
+
+        # Call Log
+        pdf_result = _to_call_log_pdf_result(page_images)
+        messages_sent = list(result.get("messages_log", []))
+        # Create a copy of results for call log without popping messages_log
+        clean_result = {k: v for k, v in result.items() if k != "messages_log"}
         create_call_log(
             request_data={"endpoint": "/ocr/process/document", "document_type": document_type, "pages": pages, "files": [f.filename for f in files]},
-            pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
-            messages_sent=result.pop("messages_log", []),
-            output=result,
+            pdf_result=pdf_result,
+            messages_sent=messages_sent,
+            output=clean_result,
         )
         return result
 
@@ -213,12 +242,11 @@ async def process_ocr_fields(
 ):
     # Helper to convert strings to snake_case
     def _to_snake_case(value: str) -> str:
-        # Replace non-alphanumeric characters with underscore, collapse multiple underscores, strip leading/trailing underscores
         s = re.sub(r"[^0-9a-zA-Z]+", "_", value)
         s = re.sub(r"_+", "_", s)
         return s.strip("_").lower()
 
-    # Split each entry by comma (supports both comma-separated and repeated form fields), then normalize to snake_case
+    # Split each entry by comma
     raw = []
     for f in fields:
         for part in f.split(","):
@@ -227,13 +255,22 @@ async def process_ocr_fields(
                 raw.append(part)
     normalized_fields = [_to_snake_case(f) for f in raw]
     parsed_fields = normalized_fields or None
-    image_pages = await _process_files(files, pages=pages, document_type="Fields")
-    result = await run_ocr("Fields", image_pages, parsed_fields, "")
+    page_images = await _process_files(files, pages=pages, document_type="Fields")
+    result = await run_semantic("Fields", page_images, parsed_fields, "")
+    
+    # Include page dimensions in response
+    page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
+    result["page_dimensions"] = page_dims
+
+    # Call Log
+    pdf_result = _to_call_log_pdf_result(page_images)
+    messages_sent = list(result.get("messages_log", []))
+    clean_result = {k: v for k, v in result.items() if k != "messages_log"}
     create_call_log(
         request_data={"endpoint": "/ocr/process/fields", "fields": parsed_fields, "pages": pages, "files": [f.filename for f in files]},
-        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
-        messages_sent=result.pop("messages_log", []),
-        output=result,
+        pdf_result=pdf_result,
+        messages_sent=messages_sent,
+        output=clean_result,
     )
     return result
 
@@ -252,7 +289,7 @@ async def process_ocr_prompt(
         ),
     ),
     custom_prompt: str = Form(
-        BASE_DIRECTIVES,
+        ...,
         description="Custom instruction prepended to the model input.",
     ),
     pages: str = Form(
@@ -264,15 +301,25 @@ async def process_ocr_prompt(
         ),
     ),
 ):
-    image_pages = await _process_files(files, pages=pages, document_type="Custom")
-    result = await run_ocr("Custom", image_pages, None, custom_prompt)
+    page_images = await _process_files(files, pages=pages, document_type="Custom")
+    result = await run_semantic("Custom", page_images, None, custom_prompt)
+    
+    # Include page dimensions in response
+    page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
+    result["page_dimensions"] = page_dims
+
+    # Call Log
+    pdf_result = _to_call_log_pdf_result(page_images)
+    messages_sent = list(result.get("messages_log", []))
+    clean_result = {k: v for k, v in result.items() if k != "messages_log"}
     create_call_log(
         request_data={"endpoint": "/ocr/process/prompt", "custom_prompt": custom_prompt, "pages": pages, "files": [f.filename for f in files]},
-        pdf_result=[{"page_no": p["page_no"], "markdown": p.get("markdown", ""), "image": p["image"], "table_images": p.get("table_images", [])} for p in image_pages],
-        messages_sent=result.pop("messages_log", []),
-        output=result,
+        pdf_result=pdf_result,
+        messages_sent=messages_sent,
+        output=clean_result,
     )
     return result
+
 
 async def process_ocr_coo_document(
     files: List[UploadFile],
@@ -365,28 +412,28 @@ async def process_ocr_coo_document(
     # Process BL
     bl_pages = pages if pages else ""
     bl_file_pages = await _process_files([classified["BL"]], pages=bl_pages, document_type="BL")
-    bl_result = await run_ocr("BL", bl_file_pages, None, "")
+    bl_result = await run_semantic("BL", bl_file_pages, None, "")
     bl_data = bl_result.get("data", {}) if bl_result.get("success") else {}
     bl_data = bl_data or {}
 
     # Process PEB
     peb_pages = "-2"
     peb_file_pages = await _process_files([classified["PEB"]], pages=peb_pages, document_type="PEB")
-    peb_result = await run_ocr("PEB", peb_file_pages, None, "")
+    peb_result = await run_semantic("PEB", peb_file_pages, None, "")
     peb_data = peb_result.get("data", {}) if peb_result.get("success") else {}
     peb_data = peb_data or {}
 
     # Process PL
     pl_pages = "1"
     pl_file_pages = await _process_files([classified["PL"]], pages=pl_pages, document_type="PL")
-    pl_result = await run_ocr("PL", pl_file_pages, None, "")
+    pl_result = await run_semantic("PL", pl_file_pages, None, "")
     pl_data = pl_result.get("data", {}) if pl_result.get("success") else {}
     pl_data = pl_data or {}
 
     # Process INV_COO
     inv_pages = "1"
     inv_file_pages = await _process_files([classified["INV_COO"]], pages=inv_pages, document_type="INV_COO")
-    inv_result = await run_ocr("INV_COO", inv_file_pages, None, "")
+    inv_result = await run_semantic("INV_COO", inv_file_pages, None, "")
     inv_data = inv_result.get("data", {}) if inv_result.get("success") else {}
     inv_data = inv_data or {}
 
@@ -417,37 +464,52 @@ async def process_ocr_coo_document(
     # Combined logs formatting
     combined_pdf_result = []
     combined_messages_log = []
+    combined_page_dims = {}
 
     for pages_data in [bl_file_pages, peb_file_pages, pl_file_pages, inv_file_pages]:
         for p in pages_data:
+            next_page_no = len(combined_pdf_result) + 1
+            combined_page_dims[str(next_page_no)] = {"width": p["width"], "height": p["height"]}
+            
+            buffered = io.BytesIO()
+            p["image"].save(buffered, format="JPEG")
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            
             combined_pdf_result.append({
-                "page_no": len(combined_pdf_result) + 1,
-                "markdown": p.get("markdown", ""),
-                "image": p["image"],
-                "table_images": p.get("table_images", [])
+                "page_no": next_page_no,
+                "markdown": "",
+                "image": {
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                    "mime_type": "image/jpeg"
+                },
+                "table_images": []
             })
 
     for res in [bl_result, peb_result, pl_result, inv_result]:
         if "messages_log" in res:
             combined_messages_log.extend(res["messages_log"])
 
-    result_output = {"success": True, "data": merged_data}
+    result_output = {
+        "success": True, 
+        "data": merged_data,
+        "page_dimensions": combined_page_dims
+    }
+    
     create_call_log(
         request_data={"endpoint": "/ocr/process/coo", "pages": pages, "files": [f.filename for f in files]},
         pdf_result=combined_pdf_result,
         messages_sent=combined_messages_log,
-        output=result_output,
+        output={"success": True, "data": merged_data, "page_dimensions": combined_page_dims},
     )
 
     return result_output
-
 
 
 @app.get("/health", tags=["Utility"])
 def health_check():
     base_info = {
         "vllm_max_model_len": 11000,
-        "max_image_size": f"{MAX_IMAGE_SIZE}×{MAX_IMAGE_SIZE}",
+        "max_image_size": "N/A",
         "max_images_per_request": MAX_DOC_PAGES,
     }
     try:
@@ -467,7 +529,7 @@ def health_check():
 async def root():
     return {
         "name": "Document OCR API",
-        "version": "5.1.0",
+        "version": "6.0.0",
         "supported_document_types": list(DOCUMENT_PROMPTS.keys()) + ["COO"],
         "endpoints": {
             "document_ocr": "POST /ocr/process/document",
