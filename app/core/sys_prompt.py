@@ -316,3 +316,171 @@ DOCUMENT_SCHEMAS = {
     "PL": PL_SCHEMA,
     "COO": COO_SCHEMA,
 }
+
+_AGGREGATE_DOC_RULES = {
+    "KTP": f"""
+EXPECTED SCHEMA:
+{KTP_SCHEMA}
+""",
+    "KK": f"""
+EXPECTED SCHEMA:
+{KK_SCHEMA}
+CONFLICT RESOLUTION & DEDUPLICATION:
+- Merge all family members from `anggota_keluarga` across all pages.
+- Deduplicate members by `nik` (16-digit national ID) or `nama_lengkap`. If the same member appears on multiple pages, merge their fields, retaining the most complete/accurate data.
+""",
+    "NPWP": f"""
+EXPECTED SCHEMA:
+{NPWP_SCHEMA}
+CONFLICT RESOLUTION:
+- Prefer the NPWP number that contains exactly 15 digits (no dots/dashes).
+""",
+    "Invoice": f"""
+EXPECTED SCHEMA:
+{INVOICE_SCHEMA}
+CONFLICT RESOLUTION:
+- Prefer header info (`invoice_number`, `invoice_date`, `purchase_order`) from the first page's extraction.
+- Prefer `total_amount` from the last page's extraction.
+""",
+   "Quotation": f"""
+EXPECTED SCHEMA:
+{QUOTATION_SCHEMA}
+
+CONFLICT RESOLUTION & DEDUPLICATION:
+- Merge all items from `material_items` across all pages.
+- Deduplicate items based on `material_code` first, then `item_number`.
+
+PRICE TIER DETECTION:
+- If multiple rows share the SAME `item_number` AND same `material_description`
+  but have DIFFERENT `quantity` and `unit_price` values — these are PRICE TIERS,
+  not separate items.
+- Price tiers must be collapsed into a single item object using a `price_tiers` array:
+  {{
+    "item_number": "1",
+    "material_code": "SNP001",
+    "material_description": "...",
+    "price_tiers": [
+      {{"quantity": "1,000 Pieces", "unit_price": "USD 0.2740/pc", "amount": "USD 274.00"}},
+      {{"quantity": "5,000 Pieces", "unit_price": "USD 0.0659/pc", "amount": "USD 329.50"}}
+    ],
+    "unit": "",
+    "UoM": ""
+  }}
+- If a page has items with `item_number` "1", "2", "3"... these are DISTINCT items, not tiers.
+- If a page has items ALL with the same `item_number` "1." but different quantities — these are PRICE TIERS.
+
+MATCHING PRICE TIERS TO ITEMS:
+- Match price tiers to their correct item using `material_description` similarity.
+- If page 1 has price tiers for "INNER BOX [MODEL PB:SR]" and page 2 has items
+  with `material_description` containing "INNER BOX" — attach the tiers to those items.
+- If no match found, keep tiers as a standalone item with `price_tiers` array.
+
+ROW ORDER:
+- Final array order: item_number ascending (1, 2, 3...).
+- Price tiers within an item: quantity ascending.
+""",
+    "SIM": f"""
+EXPECTED SCHEMA:
+{SIM_SCHEMA}
+""",
+    "IJAZAH": f"""
+EXPECTED SCHEMA:
+{IJAZAH_SCHEMA}
+""",
+    "BL": f"""
+EXPECTED SCHEMA:
+{BL_SCHEMA}
+""",
+    "PEB": f"""
+EXPECTED SCHEMA:
+{PEB_SCHEMA}
+""",
+    "PL": f"""
+EXPECTED SCHEMA:
+{PL_SCHEMA}
+""",
+    "COO": f"""
+EXPECTED SCHEMA:
+{COO_SCHEMA}
+CONSOLIDATION & KEY MAPPING RULES:
+- Consolidate data from B/L, PEB, PL, and Invoice pages.
+- Map the sub-document fields to the final COO_SCHEMA keys as follows:
+  * From Bill of Lading (B/L):
+    - Map B/L `document_no` to `document_no_bl`
+    - Map B/L `document_date` to `date_bl`
+  * From PEB (Pemberitahuan Ekspor Barang):
+    - Map PEB `nomor_pendaftaran` to `document_no_peb`
+    - Map PEB `tanggal_pendaftaran` to `date_peb`
+  * From Packing List (PL):
+    - Map PL `no` to `document_no_pl`
+    - Map PL `date` to `date_pl`
+  * From Invoice:
+    - Map Invoice `invoice_number` to `invoice_no`
+- In case of conflict, prefer `total_amount` from the PEB page (nilai_transaksi).
+- In case of conflict, prefer `receiving_company` (consignee) from the B/L page.
+"""
+}
+
+
+def get_aggregate_prompt(
+    doc_type: str,
+    fields: list | None = None,
+    custom_prompt: str = "",
+) -> str:
+    """Build aggregation prompt that works with pre-computed tallies.
+
+    Python pre-computes field tallies (counts, majority, ties) and passes
+    them as structured text. The LLM only needs to confirm recommendations
+    or override when semantic context suggests a better choice.
+    """
+    doc_rules = _AGGREGATE_DOC_RULES.get(doc_type, "")
+
+    # Build dynamic rules for user-driven modes
+    if doc_type == "Fields" and fields:
+        field_list = "\n".join(f"  - `{f}`" for f in fields)
+        doc_rules = (
+            "EXPECTED FIELDS:\n"
+            f"{field_list}\n\n"
+            "FIELD RULES:\n"
+            "- The final output MUST contain ONLY the fields listed above — no extra keys.\n"
+            "- JSON keys MUST exactly match the field names listed above.\n"
+        )
+
+    prompt = (
+        f"You are an OCR data consolidation engine for {doc_type} documents.\n"
+        "You receive PRE-COMPUTED TALLIES — Python has already counted every field's "
+        "occurrences across pages. You do NOT need to count.\n\n"
+
+        "YOUR TASK:\n"
+        "1. For each field, review the RECOMMENDED value.\n"
+        "2. Accept the recommendation unless document-specific rules or semantic "
+        "context clearly indicate a better choice.\n"
+        "3. For TIED fields, use document context to pick the best value.\n"
+        "4. For ARRAY fields, deduplicate using semantic similarity "
+        "(e.g. same person with slightly different name spelling = same entry).\n"
+        "5. For NUMERIC fields, the last-page value is already recommended — But Check First with Other Values, if you have same value multiple times choose that.\n\n"
+
+        "OVERRIDE RULES:\n"
+        "- You may override a recommendation ONLY if the recommended value is clearly "
+        "wrong based on document-type conventions or field-specific rules below.\n"
+        "- Never fabricate values. Only pick from values that actually appeared.\n"
+        "- Each field is fully independent.\n\n"
+    )
+
+    if custom_prompt:
+        prompt += (
+            "ORIGINAL EXTRACTION PROMPT (use for semantic context):\n"
+            f"```\n{custom_prompt}\n```\n\n"
+        )
+
+    if doc_rules:
+        prompt += f"DOCUMENT TYPE SPECIFIC RULES:\n{doc_rules}\n\n"
+
+    prompt += (
+        "OUTPUT: Return ONLY the final JSON object.\n"
+        "No thinking, no explanation, no markdown fences, no trailing commas.\n"
+        "Start with { and end with }.\n"
+    )
+
+    return prompt
+

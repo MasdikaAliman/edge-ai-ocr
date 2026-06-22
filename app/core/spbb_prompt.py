@@ -13,11 +13,11 @@ OUTPUT SCHEMA — the output object must follow exactly this structure, no extra
 ═══ HEADER FIELDS ═══
 
 invoice_number:
-  Labels: "Invoice #", "Invoice No", "Invoice No.", "Document No", "Doc No", "No."
+  Labels: "Invoice #", "Invoice No", "Invoice No.", "Document No","DN Number",  "Doc No", "No."
   Extract the alphanumeric identifier that follows.
 
 invoice_date:
-  Labels: "Invoice Date", "Date", "Issued", "Issue Date"
+  Labels: "Invoice Date", "Date", "Issued", "Issue Date", "DN Date"
   Extract verbatim (e.g. "15 Jan 2025").
 
 due_date:
@@ -27,6 +27,11 @@ due_date:
 purchase_order:
   Labels: "P.O.#", "P.O. No", "PO", "Purchase Order", "PO Number"
   Use the header value if multiple references exist. Set "" if absent.
+
+Currency:
+  labels: "CURRENCY"
+  if dont have use "$" as default
+
 
 ═══ CURRENCY ═══
 Extract symbol only ("$", "Rp", "€") or ISO code (USD, IDR) into `currency`.

@@ -1,4 +1,6 @@
 import json
+from app.core import sys_prompt
+from app.core.doc_prompt import DOCUMENT_PROMPTS
 
 FIELD_TEMPLATE = {
     "text": "string | null",
@@ -191,42 +193,33 @@ SEMANTIC_SCHEMAS = {
     "COO": INV_COO_SEMANTIC_SCHEMA
 }
 
-BASE_INSTRUCTIONS = """You are given a list of OCR-extracted text fragments with their absolute bounding boxes and page numbers.
-Your ONLY task is to identify the text and exact bounding box coordinates [x_min, y_min, x_max, y_max] for each requested field.
-
-For each field:
-1. Locate the text fragment(s) that correspond to the value of the field.
-2. If the value spans a single fragment, copy its bbox coordinates [x_min, y_min, x_max, y_max] and page_no.
-3. If the value spans multiple fragments, compute the union of their bounding boxes: [min(x_min_all), min(y_min_all), max(x_max_all), max(y_max_all)] and set page_no.
-4. Extract the exact text from the fragments. Do not invent or modify values.
-5. Format the value as: {"text": "<extracted_value>", "bbox": [x_min, y_min, x_max, y_max], "page_no": <page_no>}
-6. If a field is not found or not applicable, return null values: {"text": null, "bbox": null, "page_no": null}
-
-OUTPUT FORMAT:
-- Return ONLY valid JSON matching the requested structure.
-- Do NOT wrap in markdown code blocks (no ```json or ```).
-- Do NOT include any additional comments or explanations.
-"""
-
 def get_doctype_semantic_prompt(doc_type: str) -> str:
-    schema = SEMANTIC_SCHEMAS.get(doc_type, {})
-    return f"""{BASE_INSTRUCTIONS}
-We are extracting data from a {doc_type} document.
-Extract all fields from the OCR fragments list. Return a JSON object with this exact schema:
-{json.dumps(schema, indent=2)}
-"""
+    # Use the legacy document-specific system prompts directly.
+    # These prompts are already optimized for flat JSON outputs.
+    return DOCUMENT_PROMPTS.get(doc_type, "")
 
 def get_fields_semantic_prompt(fields: list[str]) -> str:
-    schema = {f: FIELD_TEMPLATE for f in fields}
-    return f"""{BASE_INSTRUCTIONS}
-Extract ONLY the following custom fields from the OCR fragments list. Map each field name (snake_case) to the most likely label/value found in the document:
+    from app.core.sys_prompt import BASE_DIRECTIVES
+    field_list = "\n".join(f"  - `{f}`" for f in fields)
+    schema = {f: "string | null" for f in fields}
+    return f"""You are a high-precision document extraction engine.
+Your task is to extract ONLY the specific fields listed below.
+
+{BASE_DIRECTIVES}
+
+TARGET FIELDS TO EXTRACT:
+{field_list}
+
+Please extract all fields from the document image and OCR text. Return a JSON object matching this exact schema:
 {json.dumps(schema, indent=2)}
 """
 
 def get_custom_semantic_prompt(custom_prompt: str) -> str:
-    return f"""{BASE_INSTRUCTIONS}
-Follow the user's instructions below to extract custom data from the OCR fragments list.
-Ensure that every leaf value in the output is formatted as an object with {"text": "...", "bbox": [xmin, ymin, xmax, ymax], "page_no": <page_no>}.
+    from app.core.sys_prompt import BASE_DIRECTIVES
+    return f"""You are a high-precision document extraction engine.
+Follow the user's instructions below to extract custom data from the document image and OCR text.
+
+{BASE_DIRECTIVES}
 
 User Instructions:
 {custom_prompt}

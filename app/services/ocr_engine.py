@@ -33,6 +33,8 @@ from app.core.config import logger, PADDLE_USE_GPU, PADDLE_OCR_LANG
 
 _ocr_instance = None
 
+
+
 class OCRFragment(TypedDict):
     text: str
     bbox: List[int]       # [x_min, y_min, x_max, y_max] absolute pixels
@@ -47,9 +49,10 @@ def get_ocr_engine() -> Any:
             from paddleocr import PaddleOCR
             _ocr_instance = PaddleOCR(
                 use_doc_orientation_classify=False, # Disables document orientation classification model via this parameter
-    use_doc_unwarping=False, # Disables text image rectification model via this parameter
-    use_textline_orientation=False, # Disables text line orientation classification model via this parameter
-    enable_mkldnn=False,
+                use_doc_unwarping=False, # Disables text image rectification model via this parameter
+                use_textline_orientation=False, # Disables text line orientation classification model via this parameter
+                enable_mkldnn=False,
+                device = "gpu" if PADDLE_USE_GPU else "cpu"
             )
             logger.info("PaddleOCR engine singleton initialized successfully.")
         except Exception as e:

@@ -322,7 +322,12 @@ export default function DocumentPreviewer({
 
     const pageDimensions = getActivePageDimensions();
     const activePageNo = fileType === "pdf" ? currentPage : activeImageIndex + 1;
-    let origDim = pageDimensions?.[activePageNo] || pageDimensions?.[String(activePageNo)];
+    let origDim = null;
+    if (ocrResult?.raw_results && fileType === "images") {
+      origDim = pageDimensions?.[1] || pageDimensions?.["1"];
+    } else {
+      origDim = pageDimensions?.[activePageNo] || pageDimensions?.[String(activePageNo)];
+    }
 
     // Dynamically fallback to natural/canvas dimensions if origDim is not provided in page_dimensions
     if (!origDim) {
@@ -341,9 +346,12 @@ export default function DocumentPreviewer({
     }
 
     // Filter bboxes for active page
-    const filteredBboxes = bboxes.filter(
-      (box) => box.page_no === null || box.page_no === activePageNo
-    );
+    const filteredBboxes = bboxes.filter((box) => {
+      if (ocrResult?.raw_results && fileType === "images") {
+        return true;
+      }
+      return box.page_no === null || box.page_no === activePageNo;
+    });
 
     if (filteredBboxes.length === 0) return null;
 
