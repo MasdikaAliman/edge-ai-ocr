@@ -19,7 +19,7 @@ from app.core.sys_prompt import _LAST_VALUE_FIELDS, get_aggregate_prompt
 from app.utils.parsing import clean_json_response
 from app.utils.errors import handle_llm_exception
 from app.utils.image import pil_to_content_item
-
+from icecream import ic
 def find_fuzzy_substring(full_text: str, query: str) -> Optional[tuple[int, int]]:
     # Normalize query by escaping special characters, and converting spaces/punctuation to flexible patterns
     words = re.findall(r"\w+|[^\w\s]", query)
@@ -45,12 +45,57 @@ def find_fuzzy_substring(full_text: str, query: str) -> Optional[tuple[int, int]
     if idx != -1:
         return idx, idx + len(query)
         
+    # Fallback to sliding window token-based fuzzy matching using difflib
+    tokens = []
+    for m in re.finditer(r"\S+", full_text):
+        tokens.append({
+            "text": m.group(0),
+            "start": m.start(),
+            "end": m.end()
+        })
+    if tokens:
+        query_clean = query.strip()
+        query_tokens = re.findall(r"\S+", query_clean)
+        n_query = len(query_tokens)
+        if n_query > 0:
+            best_score = 0.0
+            best_range = None
+            
+            # Sliding window size from max(1, n_query - 2) to n_query + 2
+            min_size = max(1, n_query - 2)
+            max_size = n_query + 2
+            
+            import difflib
+            for size in range(min_size, max_size + 1):
+                for i in range(len(tokens) - size + 1):
+                    window = tokens[i : i + size]
+                    start_idx = window[0]["start"]
+                    end_idx = window[-1]["end"]
+                    candidate = full_text[start_idx:end_idx]
+                    
+                    score = difflib.SequenceMatcher(None, candidate.lower(), query_clean.lower()).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best_range = (start_idx, end_idx)
+                        
+            # Determine threshold based on query length to prevent false matches on short strings
+            if len(query_clean) == 1:
+                threshold = 1.0
+            elif len(query_clean) == 2:
+                threshold = 0.8
+            else:
+                threshold = 0.7
+                
+            if best_score >= threshold and best_range is not None:
+                return best_range
+        
     return None
+
 
 def locate_text_in_fragments(
     query: str, 
     fragments: List[OCRFragment]
-) -> tuple[Optional[List[int]], Optional[float], Optional[int]]:
+) -> tuple[Optional[List[int]], Optional[float], Optional[int], Optional[str]]:
     """
     Locates the query text in the list of fragments.
     Returns (bbox, confidence, page_no) if found, otherwise (None, None, None).
@@ -101,26 +146,27 @@ def locate_text_in_fragments(
                 ymax = max(f["bbox"][3] for f in matched_frags)
                 # Average confidence
                 avg_conf = round(sum(f["confidence"] for f in matched_frags) / len(matched_frags), 4)
-                return [xmin, ymin, xmax, ymax], avg_conf, page_no
+                return [xmin, ymin, xmax, ymax], avg_conf, page_no, full_text[start_char_idx:end_char_idx]
 
     # # Fallback search for a partial match or single matching fragment
-    # best_match = None
-    # best_score = 0.0
-    # for frag in fragments:
-    #     if query.lower() in frag["text"].lower() or frag["text"].lower() in query.lower():
-    #         score = min(len(query), len(frag["text"])) / max(len(query), len(frag["text"]))
-    #         if score > best_score:
-    #             best_score = score
-    #             best_match = frag
-                
-    # if best_match and best_score > 0.3:
-    #     return best_match["bbox"], best_match["confidence"], best_match["page_no"]
+    best_match = None
+    best_score = 0.0
+    for frag in fragments:
+        if query.lower() in frag["text"].lower() or frag["text"].lower() in query.lower():
+            score = min(len(query), len(frag["text"])) / max(len(query), len(frag["text"]))
+            if score > best_score:
+                best_score = score
+                best_match = frag
 
-    return None, None, None
+    if best_match and best_score > 0.3:
+        return best_match["bbox"], best_match["confidence"], best_match["page_no"], best_match["text"]
+
+    return None, None, None, None
 
 def resolve_bboxes_for_flat_json(
     val: Any, 
-    all_fragments: List[OCRFragment]
+    all_fragments: List[OCRFragment],
+    show_only_mismatch: bool = False
 ) -> Any:
     """
     Recursively traverse the flat JSON response and resolve text values
@@ -131,11 +177,11 @@ def resolve_bboxes_for_flat_json(
 
     if isinstance(val, dict):
         # Recurse into dict keys
-        return {k: resolve_bboxes_for_flat_json(v, all_fragments) for k, v in val.items()}
+        return {k: resolve_bboxes_for_flat_json(v, all_fragments, show_only_mismatch) for k, v in val.items()}
 
     if isinstance(val, list):
         # Recurse into list items
-        return [resolve_bboxes_for_flat_json(item, all_fragments) for item in val]
+        return [resolve_bboxes_for_flat_json(item, all_fragments, show_only_mismatch) for item in val]
 
     # Otherwise, it's a leaf value (string, number, boolean)
     query_str = str(val).strip()
@@ -147,9 +193,55 @@ def resolve_bboxes_for_flat_json(
             "page_no": None
         }
 
+    if show_only_mismatch:
+        def clean(s):
+            return re.sub(r"[\s\W_]+", "", s.lower())
+        q_clean = clean(query_str)
+        if q_clean:
+            is_exact = False
+            for frag in all_fragments:
+                if clean(frag["text"]) == q_clean:
+                    is_exact = True
+                    break
+            
+            if not is_exact:
+                full_text = " ".join(frag["text"] for frag in sorted(all_fragments, key=lambda f: (f.get("page_no", 1), round(f["bbox"][1] / 10) * 10, f["bbox"][0])))
+                words = re.findall(r"\w+|[^\w\s]", query_str)
+                if words:
+                    pattern = r"\s*".join(re.escape(w) for w in words)
+                    try:
+                        match = re.search(pattern, full_text, re.IGNORECASE)
+                        if match and clean(match.group(0)) == q_clean:
+                            is_exact = True
+                    except Exception:
+                        pass
+                else:
+                    is_exact = True
+
+            if is_exact:
+                return {
+                    "text": query_str,
+                    "bbox": None,
+                    "confidence": None,
+                    "page_no": None
+                }
+
     # Find coordinates for query_str
-    bbox, confidence, page_no = locate_text_in_fragments(query_str, all_fragments)
+    bbox, confidence, page_no, matched_text = locate_text_in_fragments(query_str, all_fragments)
     
+    if show_only_mismatch:
+        # Check if the query matches the raw OCR text. If it does NOT mismatch, we clear the bbox/confidence/page_no.
+        # We clean and normalize both strings to ignore spacing, hyphens, and case differences.
+        def clean(s):
+            return re.sub(r"[\s\W_]+", "", s.lower())
+        
+        is_mismatched = False
+        if matched_text:
+            is_mismatched = clean(query_str) != clean(matched_text)
+            
+        if not is_mismatched:
+            bbox, confidence, page_no = None, None, None
+
     return {
         "text": query_str,
         "bbox": bbox,
@@ -441,7 +533,8 @@ async def run_semantic(
     document_type: str,
     page_images: List[PageImage],
     fields: Optional[List[str]] = None,
-    custom_prompt: str = ""
+    custom_prompt: str = "",
+    show_only_mismatch: bool = False
 ) -> dict:
     """
     Runs the decoupled OCR + semantic pipeline:
@@ -473,7 +566,6 @@ async def run_semantic(
 
         # Merge OCR fragments on the same line to create plain text context
         merged_lines = merge_ocr_fragments(fragments)
-        ic(merged_lines)
         
         # Format text layout by joining line fragments with spaces
         page_lines_text = []
@@ -490,11 +582,11 @@ async def run_semantic(
             prompt = get_fields_semantic_prompt(fields)
         else:
             prompt = get_doctype_semantic_prompt(document_type)
-
+        ic(lines_text)
         # Construct message content for VLM
         content = [
             pil_to_content_item(page_img["image"]),
-            {"type": "text", "text": f"After You read image see this context: \n--- Page {page_no} ---\n{lines_text}"}
+            {"type": "text", "text": f"RAW OCR CONTEXT: \n--- Page {page_no} ---\n{lines_text}"}
         ]
         
         messages = [
@@ -584,7 +676,7 @@ async def run_semantic(
         })
 
     # 3. Coordinate and Confidence Resolution
-    resolved_data = resolve_bboxes_for_flat_json(final_json, all_fragments)
+    resolved_data = resolve_bboxes_for_flat_json(final_json, all_fragments, show_only_mismatch)
 
     return {
         "success": True,

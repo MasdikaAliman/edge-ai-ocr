@@ -104,7 +104,7 @@ KTP_SCHEMA = """{
   "tempat_lahir": "string",
   "tanggal_lahir": "DD-MM-YYYY",
   "jenis_kelamin": "LAKI-LAKI | PEREMPUAN",
-  "golongan_darah": "A | B | AB | O | null",
+  "golongan_darah": "A | B | AB | O | - | null",
   "alamat": "string",
   "rt_rw": "string (e.g. 003/007)",
   "kelurahan_desa": "string",
@@ -113,7 +113,7 @@ KTP_SCHEMA = """{
   "status_perkawinan": "BELUM KAWIN | KAWIN | CERAI HIDUP | CERAI MATI",
   "pekerjaan": "string",
   "kewarganegaraan": "WNI | WNA",
-  "berlaku_hingga": "YYYY-MM-DD | SEUMUR HIDUP"
+  "berlaku_hingga": "SEUMUR HIDUP | DD-MM-YYYY"
 }"""
 
 KK_SCHEMA = """{
@@ -146,7 +146,7 @@ KK_SCHEMA = """{
 }"""
 
 NPWP_SCHEMA = """{
-  "nomor_npwp": "string (15 digits, no formatting) | null",
+  "nomor_npwp": "string (15 digits, with formatting: XX.XXX.XXX.X-XXX.XXX) | null",
   "nama": "string",
   "alamat": "string",
   "tanggal_terdaftar": "YYYY-MM-DD | null",
@@ -266,43 +266,6 @@ PL_SCHEMA = """{
   "date": "string | null"
 }"""
 
-COO_SCHEMA = """{
-  "consignee": "string | null",
-  "vessel_voyage_no": "string | null",
-  "mvs": "string | null",
-  "port_of_loading": "string | null",
-  "port_of_discharge": "string | null",
-  "invoice_no": "string | null",
-  "invoice_date": "string | null",
-  "document_no_bl": "string | null",
-  "date_bl": "string | null",
-  "document_no_peb": "string | null",
-  "date_peb": "string | null",
-  "document_no_pl": "string | null",
-  "date_pl": "string | null",
-  "ship_date": "string | null",
-  "country_of_destination": "string | null",
-  "form": "string | null",
-  "table": [
-    {
-      "no": "string | null",
-      "kategori_barang": "string | null",
-      "model": "string | null",
-      "quantity_ctns": "string | null",
-      "quantity_pcs": "string | null",
-      "unit_price": "string | null",
-      "amount_usd": "string | null",
-      "bruto": "string | null",
-      "netto": "string | null"
-    }
-  ],
-  "total_amount": "string | null",
-  "total_weight_bruto": "string | null",
-  "total_weight_netto": "string | null",
-  "total_quantity_ctns": "string | null",
-  "total_quantity_pcs": "string | null"
-}"""
-
 DOCUMENT_SCHEMAS = {
     "KTP": KTP_SCHEMA,
     "KK": KK_SCHEMA,
@@ -314,7 +277,6 @@ DOCUMENT_SCHEMAS = {
     "BL": BL_SCHEMA,
     "PEB": PEB_SCHEMA,
     "PL": PL_SCHEMA,
-    "COO": COO_SCHEMA,
 }
 
 _AGGREGATE_DOC_RULES = {
@@ -398,26 +360,6 @@ EXPECTED SCHEMA:
     "PL": f"""
 EXPECTED SCHEMA:
 {PL_SCHEMA}
-""",
-    "COO": f"""
-EXPECTED SCHEMA:
-{COO_SCHEMA}
-CONSOLIDATION & KEY MAPPING RULES:
-- Consolidate data from B/L, PEB, PL, and Invoice pages.
-- Map the sub-document fields to the final COO_SCHEMA keys as follows:
-  * From Bill of Lading (B/L):
-    - Map B/L `document_no` to `document_no_bl`
-    - Map B/L `document_date` to `date_bl`
-  * From PEB (Pemberitahuan Ekspor Barang):
-    - Map PEB `nomor_pendaftaran` to `document_no_peb`
-    - Map PEB `tanggal_pendaftaran` to `date_peb`
-  * From Packing List (PL):
-    - Map PL `no` to `document_no_pl`
-    - Map PL `date` to `date_pl`
-  * From Invoice:
-    - Map Invoice `invoice_number` to `invoice_no`
-- In case of conflict, prefer `total_amount` from the PEB page (nilai_transaksi).
-- In case of conflict, prefer `receiving_company` (consignee) from the B/L page.
 """
 }
 

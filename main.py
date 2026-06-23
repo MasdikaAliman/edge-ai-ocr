@@ -189,12 +189,16 @@ async def process_ocr_document(
             "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
         ),
     ),
+    show_only_mismatch: bool = Form(
+        False,
+        description="If True, only return bounding boxes for mismatched values between LLM and raw OCR.",
+    ),
 ):
     if document_type == "COO":
-        return await process_ocr_coo_document(files, pages)
+        return await process_ocr_coo_document(files, pages, show_only_mismatch)
     else:
         page_images = await _process_files(files, pages=pages, document_type=document_type)
-        result = await run_semantic(document_type, page_images, fields=None, custom_prompt="")
+        result = await run_semantic(document_type, page_images, fields=None, custom_prompt="", show_only_mismatch=show_only_mismatch)
         
         # Include page dimensions in response
         page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
@@ -239,6 +243,10 @@ async def process_ocr_fields(
             "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
         ),
     ),
+    show_only_mismatch: bool = Form(
+        False,
+        description="If True, only return bounding boxes for mismatched values between LLM and raw OCR.",
+    ),
 ):
     # Helper to convert strings to snake_case
     def _to_snake_case(value: str) -> str:
@@ -256,7 +264,7 @@ async def process_ocr_fields(
     normalized_fields = [_to_snake_case(f) for f in raw]
     parsed_fields = normalized_fields or None
     page_images = await _process_files(files, pages=pages, document_type="Fields")
-    result = await run_semantic("Fields", page_images, parsed_fields, "")
+    result = await run_semantic("Fields", page_images, parsed_fields, "", show_only_mismatch=show_only_mismatch)
     
     # Include page dimensions in response
     page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
@@ -300,9 +308,13 @@ async def process_ocr_prompt(
             "Examples: '1' (page 1 only), '1-5' (pages 1 to 5), '1,3,5' (specific pages), '1-3,7' (mixed)."
         ),
     ),
+    show_only_mismatch: bool = Form(
+        False,
+        description="If True, only return bounding boxes for mismatched values between LLM and raw OCR.",
+    ),
 ):
     page_images = await _process_files(files, pages=pages, document_type="Custom")
-    result = await run_semantic("Custom", page_images, None, custom_prompt)
+    result = await run_semantic("Custom", page_images, None, custom_prompt, show_only_mismatch=show_only_mismatch)
     
     # Include page dimensions in response
     page_dims = {str(p["page_no"]): {"width": p["width"], "height": p["height"]} for p in page_images}
@@ -323,7 +335,8 @@ async def process_ocr_prompt(
 
 async def process_ocr_coo_document(
     files: List[UploadFile],
-    pages: str 
+    pages: str,
+    show_only_mismatch: bool = False
 ):
     if len(files) > 4:
         raise HTTPException(
@@ -412,28 +425,28 @@ async def process_ocr_coo_document(
     # Process BL
     bl_pages = pages if pages else ""
     bl_file_pages = await _process_files([classified["BL"]], pages=bl_pages, document_type="BL")
-    bl_result = await run_semantic("BL", bl_file_pages, None, "")
+    bl_result = await run_semantic("BL", bl_file_pages, None, "", show_only_mismatch=show_only_mismatch)
     bl_data = bl_result.get("data", {}) if bl_result.get("success") else {}
     bl_data = bl_data or {}
 
     # Process PEB
     peb_pages = "-2"
     peb_file_pages = await _process_files([classified["PEB"]], pages=peb_pages, document_type="PEB")
-    peb_result = await run_semantic("PEB", peb_file_pages, None, "")
+    peb_result = await run_semantic("PEB", peb_file_pages, None, "", show_only_mismatch=show_only_mismatch)
     peb_data = peb_result.get("data", {}) if peb_result.get("success") else {}
     peb_data = peb_data or {}
 
     # Process PL
     pl_pages = "1"
     pl_file_pages = await _process_files([classified["PL"]], pages=pl_pages, document_type="PL")
-    pl_result = await run_semantic("PL", pl_file_pages, None, "")
+    pl_result = await run_semantic("PL", pl_file_pages, None, "", show_only_mismatch=show_only_mismatch)
     pl_data = pl_result.get("data", {}) if pl_result.get("success") else {}
     pl_data = pl_data or {}
 
     # Process INV_COO
     inv_pages = "1"
     inv_file_pages = await _process_files([classified["INV_COO"]], pages=inv_pages, document_type="INV_COO")
-    inv_result = await run_semantic("INV_COO", inv_file_pages, None, "")
+    inv_result = await run_semantic("INV_COO", inv_file_pages, None, "", show_only_mismatch=show_only_mismatch)
     inv_data = inv_result.get("data", {}) if inv_result.get("success") else {}
     inv_data = inv_data or {}
 

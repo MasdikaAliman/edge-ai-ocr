@@ -52,12 +52,10 @@ export default function App() {
   const activePageRef = useRef(activePage);
   activePageRef.current = activePage;
 
-  const updateActivePageState = (key, value) => {
-    const targetPage = activePageRef.current;
-    if (targetPage === "dashboard") return;
-
+  const updatePageState = (page, key, value) => {
+    if (page === "dashboard") return;
     setPageStates((prev) => {
-      const currentPageState = prev[targetPage] || {
+      const currentPageState = prev[page] || {
         uploadedFiles: [],
         selectedPages: [],
         pageSelectionText: "",
@@ -70,7 +68,7 @@ export default function App() {
 
       return {
         ...prev,
-        [targetPage]: {
+        [page]: {
           ...currentPageState,
           [key]: newValue,
         },
@@ -78,13 +76,66 @@ export default function App() {
     });
   };
 
-  const setUploadedFiles = (val) => updateActivePageState("uploadedFiles", val);
-  const setSelectedPages = (val) => updateActivePageState("selectedPages", val);
-  const setPageSelectionText = (val) => updateActivePageState("pageSelectionText", val);
-  const setOcrResult = (val) => updateActivePageState("ocrResult", val);
-  const setIsProcessing = (val) => updateActivePageState("isProcessing", val);
-  const setProgressInfo = (val) => updateActivePageState("progressInfo", val);
+  // Keep these active-page bound functions specifically for GuidedTour to work correctly
+  const setUploadedFiles = (val) => updatePageState(activePageRef.current, "uploadedFiles", val);
+  const setOcrResult = (val) => updatePageState(activePageRef.current, "ocrResult", val);
 
+  const getStepperStepForPage = (page) => {
+    const pageState = pageStates[page];
+    if (!pageState) return 1;
+    if (page === "batch") {
+      if (pageState.ocrResult) return 4;
+      if (pageState.isProcessing) return 3;
+      if (pageState.uploadedFiles.length > 0) return 2;
+      return 1;
+    } else {
+      if (pageState.ocrResult) return 3;
+      if (pageState.isProcessing) return 3;
+      if (pageState.uploadedFiles.length > 0) return 2;
+      return 1;
+    }
+  };
+
+  const getPropsForPage = (page) => {
+    const pageState = pageStates[page] || {
+      uploadedFiles: [],
+      selectedPages: [],
+      pageSelectionText: "",
+      ocrResult: null,
+      isProcessing: false,
+      progressInfo: null,
+    };
+    
+    return {
+      currentStep: getStepperStepForPage(page),
+      uploadedFiles: pageState.uploadedFiles,
+      setUploadedFiles: (val) => updatePageState(page, "uploadedFiles", val),
+      pageSelectionText: pageState.pageSelectionText,
+      setPageSelectionText: (val) => updatePageState(page, "pageSelectionText", val),
+      isServiceReady,
+      handleRunOcr: () => handleRunOcr(page),
+      handleFileChange,
+      handleAppendFileChange,
+      selectedPages: pageState.selectedPages,
+      setSelectedPages: (val) => updatePageState(page, "selectedPages", val),
+      ocrResult: pageState.ocrResult,
+      setOcrResult: (val) => updatePageState(page, "ocrResult", val),
+      directoryHandle,
+      onSelectDirectory: handleSelectDirectory,
+      isProcessing: pageState.isProcessing,
+      progressInfo: pageState.progressInfo,
+      activeMode,
+      setActiveMode,
+      fieldsList,
+      setFieldsList,
+      customPrompt,
+      setCustomPrompt,
+      handleDragOver,
+      handleDrop,
+    };
+  };
+
+  // Map active state variables for general layouts
   const activeState = pageStates[activePage] || {
     uploadedFiles: [],
     selectedPages: [],
@@ -93,13 +144,7 @@ export default function App() {
     isProcessing: false,
     progressInfo: null,
   };
-
-  const uploadedFiles = activeState.uploadedFiles;
-  const selectedPages = activeState.selectedPages;
-  const pageSelectionText = activeState.pageSelectionText;
-  const ocrResult = activeState.ocrResult;
   const isProcessing = activeState.isProcessing;
-  const progressInfo = activeState.progressInfo;
 
   // Local Directory Handles
   const [directoryHandle, setDirectoryHandle] = useState(null);
@@ -314,47 +359,48 @@ export default function App() {
   };
 
   // Run OCR trigger
-  const handleRunOcr = async () => {
-    if (uploadedFiles.length === 0) {
+  const handleRunOcr = async (page) => {
+    const pageState = pageStates[page];
+    if (!pageState || pageState.uploadedFiles.length === 0) {
       toast.error("Silakan unggah dokumen terlebih dahulu.");
       return;
     }
 
-    setIsProcessing(true);
-    setOcrResult(null);
+    updatePageState(page, "isProcessing", true);
+    updatePageState(page, "ocrResult", null);
 
-    const pagesString = pageSelectionText || (selectedPages.length > 0 ? selectedPages.join(",") : "");
+    const pagesString = pageState.pageSelectionText || (pageState.selectedPages.length > 0 ? pageState.selectedPages.join(",") : "");
 
     // Run as batch if active page is batch, or if multiple files are uploaded (except COO which processes multiple files in a single request)
-    const runAsBatch = activePage === "batch" || (uploadedFiles.length > 1 && activePage !== "coo");
+    const runAsBatch = page === "batch" || (pageState.uploadedFiles.length > 1 && page !== "coo");
 
     if (runAsBatch) {
       let endpoint = "";
       let params = {};
 
-      if (activePage === "batch" || activePage === "dokumen") {
+      if (page === "batch" || page === "dokumen") {
         if (activeMode === "fields") {
           endpoint = "/ocr/process/fields";
-          params = { fields: fieldsList, pages: pagesString };
+          params = { fields: fieldsList, pages: pagesString, show_only_mismatch: true };
         } else if (activeMode === "prompt") {
           endpoint = "/ocr/process/prompt";
-          params = { custom_prompt: customPrompt, pages: pagesString };
+          params = { custom_prompt: customPrompt, pages: pagesString, show_only_mismatch: true };
         } else {
           endpoint = "/ocr/process/document";
-          params = { document_type: selectedDocType, pages: pagesString };
+          params = { document_type: selectedDocType, pages: pagesString, show_only_mismatch: true };
         }
-      } else if (activePage === "prompt") {
+      } else if (page === "prompt") {
         endpoint = "/ocr/process/prompt";
-        params = { custom_prompt: customPrompt, pages: pagesString };
+        params = { custom_prompt: customPrompt, pages: pagesString, show_only_mismatch: true };
       }
 
       const handleProgress = (prog) => {
-        setProgressInfo(prog);
+        updatePageState(page, "progressInfo", prog);
       };
 
       try {
         const result = await processBatch({
-          files: uploadedFiles,
+          files: pageState.uploadedFiles,
           endpoint,
           params,
           baseUrl,
@@ -363,7 +409,7 @@ export default function App() {
           mapError: mapBackendError,
         });
 
-        setOcrResult(result);
+        updatePageState(page, "ocrResult", result);
 
         if (result.batch_summary.failed_files > 0) {
           toast.error(
@@ -371,47 +417,47 @@ export default function App() {
             { duration: 6000 }
           );
         } else {
-          toast.success(`Semua berkas dalam batch (${uploadedFiles.length} berkas) berhasil diproses!`);
+          toast.success(`Semua berkas dalam batch (${pageState.uploadedFiles.length} berkas) berhasil diproses!`);
         }
       } catch (err) {
         toast.error("Terjadi kegagalan saat memproses batch berkas.");
       } finally {
-        setIsProcessing(false);
-        setProgressInfo(null);
+        updatePageState(page, "isProcessing", false);
+        updatePageState(page, "progressInfo", null);
       }
     } else {
-      const isCooMode = activePage === "coo";
+      const isCooMode = page === "coo";
       let endpoint = "";
       let params = {};
 
-      if (activePage === "dokumen" || activePage === "batch") {
+      if (page === "dokumen" || page === "batch") {
         if (activeMode === "fields") {
           endpoint = "/ocr/process/fields";
-          params = { fields: fieldsList, pages: pagesString };
+          params = { fields: fieldsList, pages: pagesString, show_only_mismatch: true };
         } else if (activeMode === "prompt") {
           endpoint = "/ocr/process/prompt";
-          params = { custom_prompt: customPrompt, pages: pagesString };
+          params = { custom_prompt: customPrompt, pages: pagesString, show_only_mismatch: true };
         } else {
           endpoint = "/ocr/process/document";
-          params = { document_type: selectedDocType, pages: pagesString };
+          params = { document_type: selectedDocType, pages: pagesString, show_only_mismatch: true };
         }
-      } else if (activePage === "coo") {
+      } else if (page === "coo") {
         endpoint = "/ocr/process/document";
-        params = { document_type: "COO", pages: pagesString };
-      } else if (activePage === "prompt") {
+        params = { document_type: "COO", pages: pagesString, show_only_mismatch: true };
+      } else if (page === "prompt") {
         endpoint = "/ocr/process/prompt";
-        params = { custom_prompt: customPrompt, pages: pagesString };
+        params = { custom_prompt: customPrompt, pages: pagesString, show_only_mismatch: true };
       }
 
-      setProgressInfo({
+      updatePageState(page, "progressInfo", {
         current: 1,
         total: 1,
-        filename: isCooMode ? `${uploadedFiles.length} berkas COO` : uploadedFiles[0].name,
+        filename: isCooMode ? `${pageState.uploadedFiles.length} berkas COO` : pageState.uploadedFiles[0].name,
         percentage: 0,
       });
 
       const formData = new FormData();
-      uploadedFiles.forEach((file) => {
+      pageState.uploadedFiles.forEach((file) => {
         formData.append("files", file);
       });
       Object.entries(params).forEach(([key, value]) => {
@@ -438,19 +484,19 @@ export default function App() {
         }
 
         const data = await response.json();
-        setProgressInfo({
+        updatePageState(page, "progressInfo", {
           current: 1,
           total: 1,
-          filename: isCooMode ? `${uploadedFiles.length} berkas COO` : uploadedFiles[0].name,
+          filename: isCooMode ? `${pageState.uploadedFiles.length} berkas COO` : pageState.uploadedFiles[0].name,
           percentage: 100,
         });
-        setOcrResult(data);
+        updatePageState(page, "ocrResult", data);
         toast.success(isCooMode ? "Ekstraksi berkas COO berhasil diselesaikan!" : "Ekstraksi berhasil diselesaikan!");
       } catch (err) {
         toast.error(err.message);
       } finally {
-        setIsProcessing(false);
-        setProgressInfo(null);
+        updatePageState(page, "isProcessing", false);
+        updatePageState(page, "progressInfo", null);
       }
     }
   };
@@ -466,40 +512,31 @@ export default function App() {
 
   // Steps Calculator
   const getStepperStep = () => {
-    if (activePage === "batch") {
-      if (ocrResult) return 4;
-      if (isProcessing) return 3;
-      if (uploadedFiles.length > 0) return 2;
-      return 1;
-    } else {
-      if (ocrResult) return 3;
-      if (isProcessing) return 3; // Show Step 3 (Hasil/Progress View) when processing
-      if (uploadedFiles.length > 0) return 2;
-      return 1;
-    }
+    return getStepperStepForPage(activePage);
   };
 
   // Click handler to go back to previous steps
   const handleStepClick = (targetStep) => {
-    const currentStep = getStepperStep();
+    const page = activePage;
+    const currentStep = getStepperStepForPage(page);
     if (targetStep >= currentStep) return;
 
     if (targetStep === 1) {
-      setUploadedFiles([]);
-      setOcrResult(null);
-      setIsProcessing(false);
-      setProgressInfo(null);
-      setSelectedPages([]);
-      setPageSelectionText("");
+      updatePageState(page, "uploadedFiles", []);
+      updatePageState(page, "ocrResult", null);
+      updatePageState(page, "isProcessing", false);
+      updatePageState(page, "progressInfo", null);
+      updatePageState(page, "selectedPages", []);
+      updatePageState(page, "pageSelectionText", "");
     } else if (targetStep === 2) {
-      if (uploadedFiles.length > 0) {
-        setOcrResult(null);
-        setIsProcessing(false);
-        setProgressInfo(null);
+      if (pageStates[page].uploadedFiles.length > 0) {
+        updatePageState(page, "ocrResult", null);
+        updatePageState(page, "isProcessing", false);
+        updatePageState(page, "progressInfo", null);
       }
-    } else if (targetStep === 3 && activePage === "batch") {
-      if (uploadedFiles.length > 0 && !isProcessing) {
-        handleRunOcr();
+    } else if (targetStep === 3 && page === "batch") {
+      if (pageStates[page].uploadedFiles.length > 0 && !pageStates[page].isProcessing) {
+        handleRunOcr(page);
       }
     }
   };
@@ -532,35 +569,6 @@ export default function App() {
       setUploadedFiles,
       setOcrResult,
     });
-  };
-
-  // Props bundles for action pages
-  const sharedProps = {
-    currentStep: getStepperStep(),
-    uploadedFiles,
-    setUploadedFiles,
-    pageSelectionText,
-    setPageSelectionText,
-    isServiceReady,
-    handleRunOcr,
-    handleFileChange,
-    handleAppendFileChange,
-    selectedPages,
-    setSelectedPages,
-    ocrResult,
-    setOcrResult,
-    directoryHandle,
-    onSelectDirectory: handleSelectDirectory,
-    isProcessing,
-    progressInfo,
-    handleDragOver,
-    handleDrop,
-    activeMode,
-    setActiveMode,
-    fieldsList,
-    setFieldsList,
-    customPrompt,
-    setCustomPrompt,
   };
 
   return (
@@ -606,44 +614,42 @@ export default function App() {
                 activePage={activePage}
                 currentStep={getStepperStep()}
                 onStepClick={handleStepClick}
-                isProcessing={isProcessing}
+                isProcessing={pageStates[activePage]?.isProcessing}
               />
 
-              {/* Action Pages Switches */}
-              {activePage === "dokumen" && (
+              {/* Action Pages Switches (rendered with CSS visibility toggles to keep each tab's state & DocumentPreviewer alive) */}
+              <div className={activePage === "dokumen" ? "block" : "hidden"}>
                 <DokumenExtractor
-                  {...sharedProps}
+                  {...getPropsForPage("dokumen")}
                   docTypes={docTypes}
                   selectedDocType={selectedDocType}
                   setSelectedDocType={setSelectedDocType}
                 />
-              )}
+              </div>
 
-              {activePage === "coo" && (
+              <div className={activePage === "coo" ? "block" : "hidden"}>
                 <CooExtractor
-                  {...sharedProps}
+                  {...getPropsForPage("coo")}
                 />
-              )}
+              </div>
 
-              {activePage === "batch" && (
+              <div className={activePage === "batch" ? "block" : "hidden"}>
                 <BatchExtractor
-                  {...sharedProps}
+                  {...getPropsForPage("batch")}
                   docTypes={docTypes}
                   selectedDocType={selectedDocType}
                   setSelectedDocType={setSelectedDocType}
                   concurrencyLimit={concurrencyLimit}
                   setConcurrencyLimit={setConcurrencyLimit}
                 />
-              )}
+              </div>
 
-              {activePage === "prompt" && (
+              <div className={activePage === "prompt" ? "block" : "hidden"}>
                 <CustomPromptExtractor
-                  {...sharedProps}
-                  customPrompt={customPrompt}
-                  setCustomPrompt={setCustomPrompt}
+                  {...getPropsForPage("prompt")}
                   handlePromptExampleClick={handlePromptExampleClick}
                 />
-              )}
+              </div>
             </div>
           )}
         </main>

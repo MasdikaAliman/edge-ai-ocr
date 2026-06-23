@@ -4,27 +4,6 @@ import * as pdfjsLib from "pdfjs-dist";
 // Standard PDF.js jsdelivr CDN worker url supporting v6+
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-const PALETTE_COLORS = [
-  "#ef4444", // red
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#06b6d4", // cyan
-  "#14b8a6", // teal
-  "#f97316", // orange
-  "#a855f7", // purple
-];
-
-function getFieldColor(key) {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = key.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % PALETTE_COLORS.length;
-  return PALETTE_COLORS[index];
-}
 
 function findBboxLeaves(val, currentKey = "") {
   if (val === null || val === undefined) return [];
@@ -359,7 +338,6 @@ export default function DocumentPreviewer({
     const height = (overlaySize.height || 1);
     return filteredBboxes.map((box, idx) => {
       const [x1, y1, x2, y2] = box.bbox;
-      const color = getFieldColor(box.key);
 
       let left, top, boxWidth, boxHeight;
       if (origDim) {
@@ -408,7 +386,7 @@ export default function DocumentPreviewer({
             top: `${sortedTop}px`,
             width: `${sortedWidth}px`,
             height: `${sortedHeight}px`,
-            borderColor: color,
+            borderColor:   "#ef4444", // red,
             zIndex: 10,
           }}
         >

@@ -69,7 +69,7 @@ export async function processBatch({
                 }
               }
             }
-
+            
             const response = await fetch(`${baseUrl.replace(/\/$/, "")}${endpoint}`, {
               method: "POST",
               body: formData,

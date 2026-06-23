@@ -67,7 +67,7 @@ def test_process_ocr_document_non_coo(mock_create_call_log, mock_run_semantic, m
     
     # Assert main.py routed correctly
     mock_process_files.assert_called_once()
-    mock_run_semantic.assert_called_once_with("KTP", mock_process_files.return_value, fields=None, custom_prompt="")
+    mock_run_semantic.assert_called_once_with("KTP", mock_process_files.return_value, fields=None, custom_prompt="", show_only_mismatch=False)
     mock_create_call_log.assert_called_once()
 
 
