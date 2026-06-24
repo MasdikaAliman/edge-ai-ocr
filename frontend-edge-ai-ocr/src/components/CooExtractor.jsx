@@ -28,13 +28,13 @@ export default function CooExtractor({
           <div 
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            onClick={() => document.getElementById("file-input").click()}
+            onClick={() => document.getElementById("coo-file-input").click()}
             className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-emerald-500 dark:hover:border-emerald-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
               type="file"
-              id="file-input"
+              id="coo-file-input"
               multiple
               accept=".pdf, image/*"
               onChange={handleFileChange}
@@ -108,21 +108,21 @@ export default function CooExtractor({
 
             <div className="flex gap-2">
               <button
-                onClick={() => document.getElementById("file-input").click()}
+                onClick={() => document.getElementById("coo-file-input").click()}
                 className="flex-1 flex items-center justify-center gap-1 py-1.5 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold rounded-lg text-xs hover:border-emerald-500 hover:text-emerald-600 transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900 shadow-sm"
               >
                 Tambah
               </button>
               <button
                 onClick={() => { setUploadedFiles([]); setOcrResult(null); }}
-                className="flex items-center justify-center py-1.5 px-3 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-150 dark:border-red-900/50 rounded-lg text-xs transition-all cursor-pointer shadow-sm font-semibold"
+                className="flex items-center justify-center py-1.5 px-3 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/30 text-red-660 dark:text-red-400 border border-red-150 dark:border-red-900/50 rounded-lg text-xs transition-all cursor-pointer shadow-sm font-semibold"
               >
                 Hapus
               </button>
             </div>
             <input
               type="file"
-              id="file-input"
+              id="coo-file-input"
               multiple
               accept=".pdf, image/*"
               onChange={handleAppendFileChange}

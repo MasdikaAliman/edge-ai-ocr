@@ -186,7 +186,6 @@ async def extract_pages(pdf_bytes: bytes, max_pages: int = MAX_DOC_PAGES, pages_
         doc.close()
     except Exception as e:
         logger.warning("Could not pre-verify PDF page count: %s", e)
-
     page_filter = parse_page_filter(pages_str, num_pages)
 
     if page_filter is None and num_pages > max_pages:

@@ -37,13 +37,13 @@ export default function DokumenExtractor({
           <div 
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            onClick={() => document.getElementById("file-input").click()}
+            onClick={() => document.getElementById("dokumen-file-input").click()}
             className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
               type="file"
-              id="file-input"
+              id="dokumen-file-input"
               accept=".pdf, image/*"
               onChange={handleFileChange}
               className="hidden"
@@ -111,7 +111,7 @@ export default function DokumenExtractor({
 
             <div className="flex gap-2">
               <button
-                onClick={() => document.getElementById("file-input").click()}
+                onClick={() => document.getElementById("dokumen-file-input").click()}
                 className="flex-1 flex items-center justify-center gap-1 py-1.5 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold rounded-lg text-xs hover:border-blue-500 hover:text-blue-600 transition-all cursor-pointer bg-slate-50/50 dark:bg-slate-900 shadow-sm"
               >
                 <span className="material-symbols-outlined text-[16px]">cached</span>
@@ -126,7 +126,7 @@ export default function DokumenExtractor({
             </div>
             <input
               type="file"
-              id="file-input"
+              id="dokumen-file-input"
               accept=".pdf, image/*"
               onChange={handleFileChange}
               className="hidden"

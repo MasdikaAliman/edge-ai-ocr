@@ -127,9 +127,8 @@ async def _process_files(
                     file_pages = pages
 
                 pdf_pages = await extract_pages(raw_bytes, pages_str=file_pages)
-                # Assign sequential page numbers to avoid duplicates
+                # Keep original page numbers from PDF
                 for page in pdf_pages:
-                    page["page_no"] = len(image_pages) + 1
                     image_pages.append(page)
             else:
                 image_count += 1
@@ -423,7 +422,7 @@ async def process_ocr_coo_document(
         )
 
     # Process BL
-    bl_pages = pages if pages else ""
+    bl_pages = "1"
     bl_file_pages = await _process_files([classified["BL"]], pages=bl_pages, document_type="BL")
     bl_result = await run_semantic("BL", bl_file_pages, None, "", show_only_mismatch=show_only_mismatch)
     bl_data = bl_result.get("data", {}) if bl_result.get("success") else {}

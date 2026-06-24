@@ -19,7 +19,7 @@ from app.core.sys_prompt import _LAST_VALUE_FIELDS, get_aggregate_prompt
 from app.utils.parsing import clean_json_response
 from app.utils.errors import handle_llm_exception
 from app.utils.image import pil_to_content_item
-from icecream import ic
+
 def find_fuzzy_substring(full_text: str, query: str) -> Optional[tuple[int, int]]:
     # Normalize query by escaping special characters, and converting spaces/punctuation to flexible patterns
     words = re.findall(r"\w+|[^\w\s]", query)
@@ -249,16 +249,20 @@ def resolve_bboxes_for_flat_json(
         "page_no": page_no
     }
 
+# Backward compatibility alias for tests
+resolve_field_bounding_boxes = resolve_bboxes_for_flat_json
+
 def merge_ocr_fragments(
     fragments: List[OCRFragment], 
     max_x_gap: float = 60.0
 ) -> List[List[Dict[str, Any]]]:
     """
-    Merge adjacent OCR fragments on the same line to reduce tokens and improve LLM parsing.
+    Group OCR fragments that are vertically aligned on the same horizontal line.
     - Group fragments that are vertically aligned using an anchor-based overlap approach.
     - Sort from left to right on each line.
-    - Merge adjacent fragments if their horizontal distance is within max_x_gap.
-    Returns a list of lines, where each line is a list of merged fragment dicts.
+    - Retains original bbox and confidence values without merging/averaging, as they
+      are resolved separately.
+    Returns a list of lines, where each line is a list of original fragment dicts.
     """
     if not fragments:
         return []
@@ -301,47 +305,12 @@ def merge_ocr_fragments(
     # Sort the lines themselves by the Y coordinate of their anchors (top to bottom)
     lines = sorted(lines, key=lambda line: line[0]["bbox"][1])
             
-    merged_lines = []
-    
+    # Sort fragments within each line from left to right (X ascending)
+    sorted_lines = []
     for line in lines:
-        # Sort fragments in the line from left to right (X ascending)
-        line_sorted = sorted(line, key=lambda f: f["bbox"][0])
+        sorted_lines.append(sorted(line, key=lambda f: f["bbox"][0]))
         
-        merged_line = []
-        current_merged = None
-        for frag in line_sorted:
-            if current_merged is None:
-                current_merged = {
-                    "text": frag["text"],
-                    "bbox": list(frag["bbox"]),
-                    "confidence": frag["confidence"],
-                    "page_no": frag["page_no"]
-                }
-            else:
-                # Check horizontal gap between the end of current_merged and start of frag
-                gap = frag["bbox"][0] - current_merged["bbox"][2]
-                if gap <= max_x_gap:
-                    # Merge them
-                    current_merged["text"] += " " + frag["text"]
-                    current_merged["bbox"][0] = min(current_merged["bbox"][0], frag["bbox"][0])
-                    current_merged["bbox"][1] = min(current_merged["bbox"][1], frag["bbox"][1])
-                    current_merged["bbox"][2] = max(current_merged["bbox"][2], frag["bbox"][2])
-                    current_merged["bbox"][3] = max(current_merged["bbox"][3], frag["bbox"][3])
-                    current_merged["confidence"] = (current_merged["confidence"] + frag["confidence"]) / 2.0
-                else:
-                    merged_line.append(current_merged)
-                    current_merged = {
-                        "text": frag["text"],
-                        "bbox": list(frag["bbox"]),
-                        "confidence": frag["confidence"],
-                        "page_no": frag["page_no"]
-                    }
-        if current_merged:
-            merged_line.append(current_merged)
-            
-        merged_lines.append(merged_line)
-            
-    return merged_lines
+    return sorted_lines
 
 def build_field_tallies(page_results: List[Dict[str, Any]]) -> str:
     """Pre-compute tallies for every field across pages.
@@ -556,8 +525,6 @@ async def run_semantic(
     all_fragments = []
     page_results = []
     messages_log = []
-    from icecream import ic 
-
     # 1. Process page-by-page
     for page_img in page_images:
         page_no = page_img["page_no"]
@@ -566,7 +533,6 @@ async def run_semantic(
 
         # Merge OCR fragments on the same line to create plain text context
         merged_lines = merge_ocr_fragments(fragments)
-        
         # Format text layout by joining line fragments with spaces
         page_lines_text = []
         for line in merged_lines:
@@ -582,7 +548,7 @@ async def run_semantic(
             prompt = get_fields_semantic_prompt(fields)
         else:
             prompt = get_doctype_semantic_prompt(document_type)
-        ic(lines_text)
+        
         # Construct message content for VLM
         content = [
             pil_to_content_item(page_img["image"]),

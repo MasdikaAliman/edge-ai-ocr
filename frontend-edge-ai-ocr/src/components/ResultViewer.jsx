@@ -115,19 +115,6 @@ export default function ResultViewer({
             </p>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between items-center text-xs font-bold text-on-surface-variant dark:text-surface-variant">
-              <span>Progres Ekstraksi</span>
-              <span>{percentage}%</span>
-            </div>
-            <div className="progress-track-result">
-              <div
-                className="progress-bar-result"
-                style={{ width: `${percentage}%` }}
-              ></div>
-            </div>
-          </div>
-
           <p className="text-[11px] text-on-surface-variant dark:text-surface-variant italic">
             Mohon jangan menutup halaman ini selama proses ekstraksi AI berlangsung.
           </p>

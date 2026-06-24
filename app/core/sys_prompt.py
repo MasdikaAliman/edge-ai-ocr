@@ -228,20 +228,15 @@ SIM_SCHEMA = """{
 }"""
 
 IJAZAH_SCHEMA = """{
-  "document_level": "SMA | SMK | MA | D3 | D4 | S1 | S2 | S3",
+  "document_level": "D3 | D4 | S1 | S2 | S3",
   "institution_name": "string",
   "nomor_ijazah": "string | null",
   "nama_lengkap": "string",
   "tempat_lahir": "string",
   "tanggal_lahir": "DD/MM/YYYY",
-  "nisn": "string | null",
-  "nis": "string | null",
   "nim": "string | null",
-  "jurusan_sma": "string | null",
-  "kompetensi_keahlian": "string | null",
   "program_studi": "string | null",
   "fakultas": "string | null",
-  "tahun_lulus": "string",
   "tanggal_lulus": "DD/MM/YYYY | null",
   "tanggal_ijazah": "DD/MM/YYYY | null"
 }"""

@@ -57,13 +57,13 @@ export default function BatchExtractor({
           <div 
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            onClick={() => document.getElementById("file-input").click()}
+            onClick={() => document.getElementById("batch-file-input").click()}
             className="border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 rounded-2xl flex flex-col items-center justify-center text-center group hover:border-purple-500 dark:hover:border-purple-500 transition-all cursor-pointer bg-white dark:bg-slate-900/40 relative overflow-hidden h-[300px]"
             id="upload-zone-container"
           >
             <input
               type="file"
-              id="file-input"
+              id="batch-file-input"
               multiple
               accept=".pdf, image/*"
               onChange={handleFileChange}
@@ -155,7 +155,7 @@ export default function BatchExtractor({
               })}
             </div>
             <button
-              onClick={() => document.getElementById("file-input").click()}
+              onClick={() => document.getElementById("batch-file-input").click()}
               className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 hover:border-purple-500 hover:text-purple-600 dark:text-slate-400 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
@@ -163,7 +163,7 @@ export default function BatchExtractor({
             </button>
             <input
               type="file"
-              id="file-input"
+              id="batch-file-input"
               multiple
               accept=".pdf, image/*"
               onChange={handleAppendFileChange}

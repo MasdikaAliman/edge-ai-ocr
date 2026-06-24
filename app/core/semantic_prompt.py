@@ -216,9 +216,16 @@ Please extract all fields from the document image and OCR text. Return a JSON ob
 
 def get_custom_semantic_prompt(custom_prompt: str) -> str:
     from app.core.sys_prompt import BASE_DIRECTIVES
-    return f"""You are a high-precision document extraction engine.
-Follow the user's instructions below to extract custom data from the document image and OCR text.
+    return f"""You are a flexible document extraction assistant. \
+Your primary directive is to follow the user's custom prompt below.
 
+Only reject if the instruction has absolutely nothing to do with the provided \
+document/image. When in doubt, follow the user's instruction.
+
+OUTPUT CONVENTION:
+- Follow the format the user requests (JSON, CSV, text, etc.).
+- If no specific format is requested, output JSON.
+- Use snake_case for any keys you invent yourself.
 {BASE_DIRECTIVES}
 
 User Instructions:

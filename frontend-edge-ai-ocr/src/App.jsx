@@ -18,8 +18,8 @@ import {
 } from "./utils/fileSystem";
 
 export default function App() {
-  // const baseUrl = "http://192.168.13.176:5030";
-  const baseUrl = "http://localhost:5030";
+  const baseUrl = "http://192.168.13.176:5030";
+  // const baseUrl = "http://localhost:5030";
 
 
   // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt"
@@ -144,7 +144,7 @@ export default function App() {
     isProcessing: false,
     progressInfo: null,
   };
-  const isProcessing = activeState.isProcessing;
+  const { uploadedFiles, isProcessing } = activeState;
 
   // Local Directory Handles
   const [directoryHandle, setDirectoryHandle] = useState(null);

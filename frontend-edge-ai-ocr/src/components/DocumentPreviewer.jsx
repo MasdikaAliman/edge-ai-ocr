@@ -5,6 +5,47 @@ import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 
+const FIELD_TO_DOC_TYPE = {
+  // BL fields
+  consignee: "BL",
+  vessel_voyage_no: "BL",
+  mvs: "BL",
+  document_no_bl: "BL",
+  date_bl: "BL",
+  ship_date: "BL",
+  country_of_destination: "BL",
+
+  // PEB fields
+  document_no_peb: "PEB",
+  date_peb: "PEB",
+
+  // PL fields
+  document_no_pl: "PL",
+  date_pl: "PL",
+
+  // INV_COO fields
+  invoice_no: "INV_COO",
+  invoice_date: "INV_COO",
+  form: "INV_COO",
+  table: "INV_COO",
+  total_amount: "INV_COO",
+  total_weight_bruto: "INV_COO",
+  total_weight_netto: "INV_COO",
+  total_quantity_ctns: "INV_COO",
+  total_quantity_pcs: "INV_COO",
+
+  // Table item fields (Invoice)
+  no: "INV_COO",
+  kategori_barang: "INV_COO",
+  model: "INV_COO",
+  quantity_ctns: "INV_COO",
+  quantity_pcs: "INV_COO",
+  unit_price: "INV_COO",
+  amount_usd: "INV_COO",
+  bruto: "INV_COO",
+  netto: "INV_COO",
+};
+
 function findBboxLeaves(val, currentKey = "") {
   if (val === null || val === undefined) return [];
 
@@ -154,6 +195,41 @@ export default function DocumentPreviewer({
       };
     }
   }, [files, activePdfIndex]);
+
+  // Auto-jump to first mismatch page/file on result load
+  useEffect(() => {
+    if (!ocrResult || !files || files.length === 0) return;
+
+    const pageResponse = ocrResult.data !== undefined ? ocrResult.data : ocrResult;
+    const bboxes = findBboxLeaves(pageResponse);
+    const firstMismatch = bboxes.find((box) => box.page_no !== null && box.bbox !== null);
+
+    if (firstMismatch) {
+      const isCooMode = !ocrResult?.raw_results && files.length > 1;
+      if (isCooMode && fileType === "pdf") {
+        const fieldDocType = FIELD_TO_DOC_TYPE[firstMismatch.key];
+        if (fieldDocType) {
+          const targetIndex = files.findIndex((file) => {
+            const name = file.name.toLowerCase();
+            if (fieldDocType === "BL") return name.includes("bl") || name.includes("lading") || name.includes("bill");
+            if (fieldDocType === "PEB") return name.includes("peb") || name.includes("ekspor");
+            if (fieldDocType === "PL") return name.includes("packing") || name.includes("pl");
+            if (fieldDocType === "INV_COO") return name.includes("invoice") || name.includes("inv");
+            return false;
+          });
+
+          if (targetIndex !== -1) {
+            setActivePdfIndex(targetIndex);
+            setCurrentPage(firstMismatch.page_no);
+          }
+        }
+      } else if (fileType === "pdf") {
+        setCurrentPage(firstMismatch.page_no);
+      } else if (fileType === "images") {
+        setActiveImageIndex(firstMismatch.page_no - 1);
+      }
+    }
+  }, [ocrResult, fileType]);
 
   // PDF Canvas render pipeline
   useEffect(() => {
@@ -325,9 +401,31 @@ export default function DocumentPreviewer({
     }
 
     // Filter bboxes for active page
+    const isCooMode = !ocrResult?.raw_results && files.length > 1;
+    let activeDocType = "";
+    if (isCooMode && fileType === "pdf") {
+      const activeFile = files[activePdfIndex];
+      const name = activeFile ? activeFile.name.toLowerCase() : "";
+      if (name.includes("bl") || name.includes("lading") || name.includes("bill")) {
+        activeDocType = "BL";
+      } else if (name.includes("peb") || name.includes("ekspor")) {
+        activeDocType = "PEB";
+      } else if (name.includes("packing") || name.includes("pl")) {
+        activeDocType = "PL";
+      } else if (name.includes("invoice") || name.includes("inv")) {
+        activeDocType = "INV_COO";
+      }
+    }
+
     const filteredBboxes = bboxes.filter((box) => {
       if (ocrResult?.raw_results && fileType === "images") {
         return true;
+      }
+      if (isCooMode) {
+        const fieldDocType = FIELD_TO_DOC_TYPE[box.key];
+        if (fieldDocType && fieldDocType !== activeDocType) {
+          return false;
+        }
       }
       return box.page_no === null || box.page_no === activePageNo;
     });
@@ -343,26 +441,19 @@ export default function DocumentPreviewer({
       if (origDim) {
         const scaleX = width / origDim.width;
         const scaleY = height / origDim.height;
-        left = x1 * scaleX;
-        top = y1 * scaleY;
-        boxWidth = (x2 - x1) * scaleX;
-        boxHeight = (y2 - y1) * scaleY;
-      } else {
-        if (box.isAbsolute) {
-          // Absolute coordinates without dimensions mapping
-          left = x1;
-          top = y1;
-          boxWidth = x2 - x1;
-          boxHeight = y2 - y1;
-        } else {
-          // Fallback to normalized coords [0, 999] only for legacy non-absolute coordinates
-          left = (x1 / 999) * width;
-          top = (y1 / 999) * height;
-          boxWidth = ((x2 - x1) / 999) * width;
-          boxHeight = ((y2 - y1) / 999) * height;
-        }
-      }
+        const rawW = (x2 - x1) * scaleX;
+        const rawH = (y2 - y1) * scaleY;
+        const absH = Math.abs(rawH);
 
+        // Dynamic padding based on the bbox height (which scales with text/font size)
+        const padX = Math.max(5, absH * 0.15);
+        const padY = Math.max(2, absH * 0.1);
+
+        left = x1 * scaleX - padX;
+        top = y1 * scaleY + padY;
+        boxWidth = rawW + padX * 2;
+        boxHeight = rawH + padY * 2;
+      }
       // Handle coordinate sorting to ensure positive widths and heights
       let sortedLeft = left;
       let sortedTop = top;

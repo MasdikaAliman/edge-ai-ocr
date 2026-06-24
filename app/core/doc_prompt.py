@@ -160,8 +160,13 @@ Extract all fields from this KTP image. Return a JSON object with this exact sch
 {KTP_SCHEMA}
 """
 
-KK_PROMPT = f"""You are an expert OCR engine specialized in Indonesian \
-Kartu Keluarga (KK / Family Card).
+KK_PROMPT = f"""You are an expert OCR engine specialized in Indonesian Kartu Keluarga (KK / Family Card).
+
+You will receive:
+1. The original KK image.
+2. OCR raw text/context extracted from the image.
+
+Your task is to extract ONLY the fields listed below from the KK.
 
 {BASE_DIRECTIVES}
 
@@ -184,145 +189,156 @@ ROW INTEGRITY RULES:
 - Every member object must have exactly the keys listed above — no more, no fewer.
 - Maintain original top-to-bottom row order.
 
+Extract all fields from this KK image. Return a JSON object with this exact schema:
 {KK_SCHEMA}
 """
 
-NPWP_PROMPT = f"""You are an expert OCR engine specialized in Indonesian \
-Nomor Pokok Wajib Pajak (NPWP / Tax ID).
+NPWP_PROMPT = f"""You are an expert OCR engine specialized in Indonesian Nomor Pokok Wajib Pajak (NPWP / Tax ID Card).
+
+You will receive:
+1. The original NPWP image.
+2. OCR raw text/context extracted from the image.
+
+Your task is to extract ONLY the fields listed below from the NPWP.
 
 {BASE_DIRECTIVES}
 
 EXPECTED FIELDS (flat):
-`nomor_npwp`, `nama`, `alamat`, `tanggal_terdaftar`, `kantor_kpp`.
+- `nomor_npwp`
+- `nama`
+- `alamat`
+- `tanggal_terdaftar`
+- `kantor_kpp`
 
-RULES:
-- Every key above MUST appear in the output object, even if the value is "" or null.
-- Normalize dates to format: DD-MM-YYYY.
+FIELD-SPECIFIC RULES:
 - nomor_npwp: exactly 15 digits as string, typically shown as XX.XXX.XXX.X-XXX.XXX
+- tanggal_terdaftar: normalize dates to format: DD-MM-YYYY.
 
-Extract all fields from this NPWP (Nomor Pokok Wajib Pajak) card image. Return a JSON object with this exact schema:
+Extract all fields from this NPWP image. Return a JSON object with this exact schema:
 {NPWP_SCHEMA}
 """
 
+SIM_PROMPT = f"""You are an expert OCR engine specialized in Indonesian driving licenses (Surat Izin Mengemudi / SIM).
 
+You will receive:
+1. The original SIM image.
+2. OCR raw text/context extracted from the image.
 
-SIM_PROMPT = f"""You are an Indonesian driving license (SIM) OCR specialist. Extract structured data from SIM images accurately.
+Your task is to extract ONLY the fields listed below from the SIM.
 
 {BASE_DIRECTIVES}
 
-Rules:
-- Return ONLY valid JSON, no explanation, no markdown fences.
-- If a field is not visible or unreadable, set its value to null.
-- Normalize dates to: DD-MM-YYYY.
-- golongan_sim valid values: A, A Umum, B1, B1 Umum, B2, B2 Umum, C, C1, D, D1.
-- nomor_sim is typically 12 digits (string).
+EXPECTED FIELDS — return ALL keys in this exact order:
+1. `nomor_sim`
+2. `golongan_sim`
+3. `nama`
+4. `tempat_lahir`
+5. `tanggal_lahir`
+6. `jenis_kelamin`
+7. `golongan_darah`
+8. `alamat`
+9. `pekerjaan`
+10. `berlaku_hingga`
+11. `instansi_penerbit`
 
-Extract all fields from this SIM (Surat Izin Mengemudi) image. Return a JSON object with this exact schema:
+FIELD-SPECIFIC RULES:
+- nomor_sim: typically 12 digits (string).
+- golongan_sim valid values: A, A Umum, B1, B1 Umum, B2, B2 Umum, C, C1, D, D1.
+- tanggal_lahir: normalize to format DD-MM-YYYY.
+- berlaku_hingga: normalize to format DD-MM-YYYY.
+
+Extract all fields from this SIM image. Return a JSON object with this exact schema:
 {SIM_SCHEMA}
 """
 
-IJAZAH_PROMPT = f"""You are an expert OCR engine specialized in extracting structured data from Indonesian academic certificates (Ijazah).
+IJAZAH_PROMPT = f"""You are an expert OCR engine specialized in Indonesian higher education academic certificates (Ijazah D3/D4/S1/S2/S3).
+
+You will receive:
+1. The original Ijazah image.
+2. OCR raw text/context extracted from the image.
+
+Your task is to extract ONLY the fields listed below from the Ijazah.
 
 {BASE_DIRECTIVES}
+
+EXPECTED FIELDS — return ALL keys in this exact order:
+1. `document_level`
+2. `institution_name`
+3. `nomor_ijazah`
+4. `nama_lengkap`
+5. `tempat_lahir`
+6. `tanggal_lahir`
+7. `nim`
+8. `program_studi`
+9. `fakultas`
+10. `tanggal_lulus`
+11. `tanggal_ijazah`
+
+Use BOTH the visual context of the document image and the provided RAW OCR CONTEXT to resolve value spelling, registration numbers, and dates. If the image is slightly blurry or hard to read, cross-reference it with the RAW OCR CONTEXT, which contains high-precision text strings.
 
 STEP 1 — LAYOUT SCAN
 
 Mentally divide the document into zones before reading any value:
-1. HEADER ZONE     — top section: institution logo, institution name, document title, certificate number.
-2. IDENTITY ZONE   — middle section: student personal data (name, birth, NIS/NIM/NPM, etc.).
-3. ACADEMIC ZONE   — competency/program/faculty/major details and graduation statement.
-4. AUTHORITY ZONE  — bottom section: city, date of issue, official name, NIP, signature, stamp.
+1. HEADER ZONE     — top section: institution logo, institution name (university/institute/college), document title, certificate number.
+2. IDENTITY ZONE   — middle section: student personal data (name, place/date of birth, NIM/NPM).
+3. ACADEMIC ZONE   — faculty, program of study (major), degree obtained, and graduation statement.
+4. AUTHORITY ZONE  — bottom section: city of issue, date of issue, signing officials (rector, dean, director).
 
 Never mix fields between zones.
 
 
-STEP 3 — HEADER ZONE EXTRACTION
+STEP 2 — HEADER ZONE EXTRACTION
 
-institution_name: Full official name of the school/university.
-- For SMA/SMK/MA: e.g. "SMA NEGERI 1 BATAM"
-- For higher education: e.g. "UNIVERSITAS INDONESIA", "POLITEKNIK NEGERI BATAM"
-- Extract from the largest text in the header, near the official logo/seal.
+institution_name: Full official name of the university, institute, polytechnic, or academy (e.g., "UNIVERSITAS INDONESIA", "POLITEKNIK NEGERI BATAM").
+- Look in the largest text of the header, close to the official logo.
 
-nomor_ijazah: Certificate serial number.
-- Labels: "Nomor", "No.", "Nomor Seri", "Nomor Ijazah", "No. Ijazah".
-- Preserve the full string including slashes, dots, and dashes. Example: "DN-MA-0023456/2024".
-- If absent: null.
+nomor_ijazah: Certificate serial/registration number.
+- Look for labels: "Nomor", "No.", "Nomor Seri", "Nomor Ijazah", "No. Ijazah", "Nomor Nasional", etc.
+- Preserve the exact full string (including slashes, dots, and dashes).
+- If not present or unreadable, return null.
 
 
-STEP 4 — IDENTITY ZONE EXTRACTION
+STEP 3 — IDENTITY ZONE EXTRACTION
 
-Extract student personal data. All fields below apply across all levels unless noted.
+nama_lengkap: Full name of the graduate. Match casing (usually ALL CAPS) and keep any punctuation/accents if present.
+- Cross-reference with RAW OCR CONTEXT to ensure exact character spelling.
 
-nama_lengkap: Full name of the graduate exactly as printed. Preserve ALL CAPS if the document uses it.
+tempat_lahir: City or regency of birth.
+- Typically appears as part of "tempat, tanggal lahir". Extract only the place.
 
-tempat_lahir: City/regency of birth. Usually preceded by "tempat lahir" or combined with date as "tempat/tanggal lahir".
+tanggal_lahir: Date of birth normalized to "DD/MM/YYYY".
+- Convert Indonesian month name to number (e.g., "12 Maret 1999" → "12/03/1999").
 
-tanggal_lahir: Normalize to "DD/MM/YYYY".
-- Source text may be in Indonesian long format: "12 Maret 1999" → "12/03/1999".
-
-jenis_kelamin: "LAKI-LAKI" or "PEREMPUAN". Label: "Jenis Kelamin", "L/P".
-- If absent: null.
-
-nama_orang_tua (SMA/SMK/MA only): Father's or parent's name.
-- Labels: "Nama Orang Tua", "Nama Ayah", "Orang Tua/Wali".
-- If absent or document is D3/D4/S1/S2/S3: null.
-
-nisn (SMA/SMK/MA only): 10-digit national student number.
-- Label: "NISN", "Nomor Induk Siswa Nasional".
-- Must be string. If absent or not applicable: null.
-
-nis (SMA/SMK/MA only): Local school student number.
-- Label: "NIS", "Nomor Induk Siswa".
-- If absent or not applicable: null.
-
-nim (D3/D4/S1/S2/S3 only): University student registration number.
+nim: Student registration/identification number.
 - Labels: "NIM", "NPM", "NRP", "Nomor Induk Mahasiswa", "Nomor Pokok Mahasiswa".
-- If absent or not applicable: null.
+- Preserve full alphanumeric value. If absent: null.
 
 
-STEP 5 — ACADEMIC ZONE EXTRACTION
+STEP 4 — ACADEMIC ZONE EXTRACTION
 
-program_studi (D3/D4/S1/S2/S3 only):
-- Labels: "Program Studi", "Jurusan", "Bidang Studi", "Program".
-- Example: "TEKNIK INFORMATIKA", "MANAJEMEN BISNIS".
-- If SMA/SMK/MA or absent: null.
-
-fakultas (D3/D4/S1/S2/S3 only):
-- Labels: "Fakultas", "Faculty".
-- Example: "FAKULTAS TEKNIK", "FAKULTAS EKONOMI DAN BISNIS".
-- If not present or not applicable: null.
-
-kompetensi_keahlian (SMK only):
-- Labels: "Kompetensi Keahlian", "Program Keahlian", "Paket Keahlian".
-- Example: "TEKNIK KOMPUTER DAN JARINGAN".
-- If not SMK or absent: null.
-
-jurusan_sma (SMA/MA only):
-- Labels: "Jurusan", "Program", "Peminatan".
-- Example: "ILMU PENGETAHUAN ALAM", "ILMU PENGETAHUAN SOSIAL", "BAHASA".
-- If not SMA/MA or absent: null.
-
-tahun_lulus: 4-digit graduation year as string.
-- Labels: "Tahun Pelajaran", "Tahun Akademik", "Lulus Tahun", "Dinyatakan Lulus".
-- Look for 4-digit year in the graduation statement paragraph.
-- Example: "2024".
-
-tanggal_lulus: Full graduation/decree date, normalized to "DD/MM/YYYY".
-- This may differ from tanggal_ijazah. Look for "dinyatakan LULUS pada tanggal" or "kelulusan".
+program_studi: Program of study / major.
+- Labels: "Program Studi", "Program Pendidikan", "Program", "Jurusan", "Program Sarjana/Diploma".
+- Examples: "TEKNIK INFORMATIKA", "AKUNTANSI".
 - If absent: null.
 
+fakultas: Academic faculty.
+- Labels: "Fakultas", "Faculty".
+- Examples: "FAKULTAS TEKNIK", "FAKULTAS ILMU KOMPUTER".
+- If absent: null.
 
-STEP 6 — AUTHORITY ZONE EXTRACTION
-tanggal_ijazah: Date the certificate was issued/signed.
-- Labels: "Dikeluarkan di ... pada tanggal", "Tanggal", date near the signature block.
-- Normalize to "DD/MM/YYYY".
+tanggal_lulus: Graduation / decree date normalized to "DD/MM/YYYY".
+- Look for the official graduation statement paragraph containing: "dinyatakan lulus pada tanggal..." or similar.
+- Convert Indonesian month name to number. If absent: null.
 
 
-OUTPUT — STRICT JSON, NO OTHER TEXT
-Return ONLY the JSON object. No explanation, no markdown fences, no preamble.
-Use null for fields that are genuinely absent or not applicable for this document level.
-Fields marked as level-specific must be null if the document is a different level.
+STEP 5 — AUTHORITY ZONE EXTRACTION
 
+tanggal_ijazah: Date the certificate was officially issued and signed.
+- Look near the rector's or dean's signature block at the bottom right.
+- Normalize to "DD/MM/YYYY" format.
+
+
+Extract all fields from this Ijazah image. Return a JSON object with this exact schema:
 {IJAZAH_SCHEMA}
 """
 
