@@ -7,6 +7,7 @@ export default function Sidebar({
   startGuidedTour,
   isCollapsed,
   setIsCollapsed,
+  user,
 }) {
   return (
     <aside 
@@ -40,38 +41,45 @@ export default function Sidebar({
 
           {/* Menu Items */}
           <nav className="space-y-1">
-            {[
-              { id: "dashboard", label: "Home", icon: "home" },
-              { id: "dokumen", label: "Ekstraksi Dokumen", icon: "description" },
-              { id: "coo", label: "Ekstraksi COO (Multi-Doc)", icon: "layers" },
-              { id: "batch", label: "Batch Processing", icon: "grid_view" },
-              { id: "prompt", label: "Custom Prompt", icon: "chat" }
-            ].map((item) => {
-              const isSelected = activePage === item.id;
-              let selectClass = "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/40";
-              
-              if (isSelected) {
-                if (item.id === "dashboard") selectClass = "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-600";
-                if (item.id === "dokumen") selectClass = "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-600";
-                if (item.id === "coo") selectClass = "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 font-bold border-l-4 border-emerald-600";
-                if (item.id === "batch") selectClass = "bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 font-bold border-l-4 border-purple-600";
-                if (item.id === "prompt") selectClass = "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 font-bold border-l-4 border-orange-600";
+            {(() => {
+              const menuItems = [
+                { id: "dashboard", label: "Home", icon: "home" },
+                { id: "dokumen", label: "Ekstraksi Dokumen", icon: "description" },
+                { id: "coo", label: "Ekstraksi COO (Multi-Doc)", icon: "layers" },
+                { id: "batch", label: "Batch Processing", icon: "grid_view" },
+                { id: "prompt", label: "Custom Prompt", icon: "chat" }
+              ];
+              if (user?.role === "admin") {
+                menuItems.push({ id: "settings", label: "Pengaturan", icon: "settings" });
               }
+              return menuItems.map((item) => {
+                const isSelected = activePage === item.id;
+                let selectClass = "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/40";
+                
+                if (isSelected) {
+                  if (item.id === "dashboard") selectClass = "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-600";
+                  if (item.id === "dokumen") selectClass = "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-600";
+                  if (item.id === "coo") selectClass = "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 font-bold border-l-4 border-emerald-600";
+                  if (item.id === "batch") selectClass = "bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 font-bold border-l-4 border-purple-600";
+                  if (item.id === "prompt") selectClass = "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 font-bold border-l-4 border-orange-600";
+                  if (item.id === "settings") selectClass = "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-600";
+                }
 
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onPageChange(item.id)}
-                  title={isCollapsed ? item.label : ""}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    isCollapsed ? "justify-center" : ""
-                  } ${selectClass}`}
-                >
-                  <span className="material-symbols-outlined text-[18px] shrink-0">{item.icon}</span>
-                  {!isCollapsed && <span className="truncate">{item.label}</span>}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onPageChange(item.id)}
+                    title={isCollapsed ? item.label : ""}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      isCollapsed ? "justify-center" : ""
+                    } ${selectClass}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px] shrink-0">{item.icon}</span>
+                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                  </button>
+                );
+              });
+            })()}
           </nav>
         </div>
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 export default function TopBar({
   pageTitle,
@@ -7,7 +7,23 @@ export default function TopBar({
   theme,
   toggleTheme,
   startGuidedTour,
+  user,
+  onLogout,
 }) {
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileDropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
       <div className="space-y-0.5">
@@ -64,6 +80,50 @@ export default function TopBar({
             )}
           </div>
         </button>
+
+        {/* Profile Dropdown */}
+        {user && (
+          <div className="relative" ref={profileDropdownRef}>
+            <button
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all cursor-pointer"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold text-sm select-none">
+                {user.username.substring(0, 2).toUpperCase()}
+              </div>
+              <div className="hidden md:flex flex-col text-left">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-none">
+                  {user.username}
+                </span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
+                  {user.employee} • {user.role === "admin" ? "Admin" : "User"}
+                </span>
+              </div>
+              <span className="material-symbols-outlined text-[16px] text-slate-400">
+                keyboard_arrow_down
+              </span>
+            </button>
+
+            {isProfileOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#0f172a] border border-slate-200/60 dark:border-slate-800 rounded-2xl shadow-lg p-2 z-50 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 mb-1">
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1 truncate">{user.username}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{user.employee}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onLogout();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-colors text-xs font-semibold text-left cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">logout</span>
+                  <span>Keluar</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );

@@ -1,0 +1,32 @@
+# === Web Framework ===
+fastapi
+uvicorn[standard]
+python-multipart
+slowapi
+python-magic
+
+# === HTTP & Config ===
+requests
+pydantic
+pydantic-settings
+python-dotenv
+
+# === LLM / AI Pipeline ===
+langchain
+langchain-core
+langchain-openai
+
+# === PDF Processing ===
+pdfplumber
+PyMuPDF
+
+# === OCR Engine ===
+paddlepaddle>=2.6.0
+paddleocr>=3.4.0
+
+# === Image ===
+Pillow
+
+# === Security ===
+pyjwt
+bcrypt

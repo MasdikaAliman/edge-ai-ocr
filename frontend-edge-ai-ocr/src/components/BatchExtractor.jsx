@@ -413,37 +413,57 @@ export default function BatchExtractor({
 
   // Step 4: Hasil view
   return (
-    <div className="grid grid-cols-12 gap-6 items-start">
-      <div className="col-span-12 lg:col-span-6">
-        <ResultViewer
-          ocrResult={ocrResult}
-          setOcrResult={setOcrResult}
-          activeMode={activeMode}
-          selectedDocType={selectedDocType}
-          directoryHandle={directoryHandle}
-          uploadedFiles={uploadedFiles}
-          isProcessing={isProcessing}
-          progressInfo={progressInfo}
-        />
+    <div className="bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant rounded-2xl shadow-sm flex flex-col h-[750px] lg:h-[calc(100vh-10rem)] min-h-[600px] transition-colors duration-300 overflow-hidden" id="batch-results-unified-card">
+      {/* Unified Card Header */}
+      <div className="px-6 py-4 border-b border-border-subtle dark:border-outline-variant flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface-ice dark:bg-on-surface-variant/5 select-none">
+        <div>
+          <h3 className="font-bold text-slate-850 dark:text-slate-100 text-sm flex items-center gap-2">
+            <span className="material-symbols-outlined text-purple-650 dark:text-purple-400">task</span>
+            Hasil Ekstraksi & Pratinjau Batch
+          </h3>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+            Tinjau data JSON yang terekstraksi berdampingan dengan pratinjau dokumen PDF/Gambar.
+          </p>
+        </div>
+
+        {/* Mini Stats Summary */}
+        <div className="flex gap-2 shrink-0">
+          <span className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center gap-1 border border-emerald-100/50 dark:border-emerald-950/50">
+            <span className="material-symbols-outlined text-[13px]">check_circle</span>
+            <span>{(ocrResult?.batch_summary?.processed_files ?? 0) - (ocrResult?.batch_summary?.failed_files ?? 0)} Sukses</span>
+          </span>
+          {ocrResult?.batch_summary?.failed_files > 0 && (
+            <span className="px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-950/20 text-red-650 dark:text-red-400 font-bold text-[10px] flex items-center gap-1 border border-red-100/50 dark:border-red-950/50">
+              <span className="material-symbols-outlined text-[13px]">cancel</span>
+              <span>{ocrResult.batch_summary.failed_files} Gagal</span>
+            </span>
+          )}
+        </div>
       </div>
-      <div className="col-span-12 lg:col-span-6 space-y-6">
-        <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-          <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
-            Hasil Log Batch
-          </h4>
-          <div className="space-y-2.5 max-h-[160px] overflow-y-auto custom-scrollbar">
+
+      {/* Card Content - 3 Panels Horizontal Layout on Large Screens */}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-border-subtle dark:divide-outline-variant overflow-hidden">
+        {/* Panel 1: Hasil Log Batch Sidebar */}
+        <div className="w-full lg:w-64 bg-slate-50/50 dark:bg-slate-900/10 flex flex-col shrink-0 min-h-[150px] lg:min-h-0 select-none">
+          <div className="px-4 py-3 border-b border-border-subtle dark:border-outline-variant bg-slate-150/40 dark:bg-slate-900/30 flex items-center justify-between shrink-0">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Daftar Berkas ({uploadedFiles.length})</span>
+          </div>
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2 max-h-[160px] lg:max-h-none">
             {uploadedFiles.map((file, idx) => {
               const isFailed = ocrResult?.batch_summary?.failures?.some(f => f.startsWith(file.name));
               return (
-                <div key={idx} className="flex items-center justify-between p-2 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 text-xs">
-                  <span className="truncate max-w-[180px] font-medium text-slate-600 dark:text-slate-300">
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-2 rounded-lg border border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-950/20 text-xs shadow-xs hover:border-purple-500/25 dark:hover:border-purple-500/25 transition-all"
+                >
+                  <span className="truncate max-w-[130px] font-medium text-slate-650 dark:text-slate-350" title={file.name}>
                     {file.name}
                   </span>
-                  <span className={`flex items-center gap-1 font-bold ${isFailed ? "text-red-500" : "text-emerald-500"}`}>
-                    <span className="material-symbols-outlined text-[16px]">
+                  <span className={`flex items-center gap-1 font-bold shrink-0 ${isFailed ? "text-red-500" : "text-emerald-500"}`}>
+                    <span className="material-symbols-outlined text-[14px]">
                       {isFailed ? "cancel" : "check_circle"}
                     </span>
-                    <span>{isFailed ? "Gagal" : "Sukses"}</span>
+                    <span className="text-[10px]">{isFailed ? "Gagal" : "Sukses"}</span>
                   </span>
                 </div>
               );
@@ -451,13 +471,32 @@ export default function BatchExtractor({
           </div>
         </div>
 
-        <DocumentPreviewer
-          files={uploadedFiles}
-          selectedPages={selectedPages}
-          onPagesChange={setSelectedPages}
-          showPageSelector={false}
-          ocrResult={ocrResult}
-        />
+        {/* Panel 2: ResultViewer (Embedded) */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <ResultViewer
+            ocrResult={ocrResult}
+            setOcrResult={setOcrResult}
+            activeMode={activeMode}
+            selectedDocType={selectedDocType}
+            directoryHandle={directoryHandle}
+            uploadedFiles={uploadedFiles}
+            isProcessing={isProcessing}
+            progressInfo={progressInfo}
+            isEmbedded={true}
+          />
+        </div>
+
+        {/* Panel 3: DocumentPreviewer (Embedded) */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <DocumentPreviewer
+            files={uploadedFiles}
+            selectedPages={selectedPages}
+            onPagesChange={setSelectedPages}
+            showPageSelector={false}
+            ocrResult={ocrResult}
+            isEmbedded={true}
+          />
+        </div>
       </div>
     </div>
   );

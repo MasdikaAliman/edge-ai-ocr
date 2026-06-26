@@ -10,6 +10,8 @@ import DokumenExtractor from "./components/DokumenExtractor";
 import CooExtractor from "./components/CooExtractor";
 import BatchExtractor from "./components/BatchExtractor";
 import CustomPromptExtractor from "./components/CustomPromptExtractor";
+import Login from "./components/Login";
+import Settings from "./components/Settings";
 import { startGuidedTour } from "./components/GuidedTour";
 import { processBatch } from "./utils/batchProcessor";
 import {
@@ -18,11 +20,36 @@ import {
 } from "./utils/fileSystem";
 
 export default function App() {
-  const baseUrl = "http://192.168.13.176:5030";
-  // const baseUrl = "http://localhost:5030";
+  const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5030";
 
+  // Auth States
+  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem("user");
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt"
+  const handleLoginSuccess = (newToken, newUser) => {
+    setToken(newToken);
+    setUser(newUser);
+    localStorage.setItem("token", newToken);
+    localStorage.setItem("user", JSON.stringify(newUser));
+  };
+
+  const handleLogout = () => {
+    setToken("");
+    setUser(null);
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setActivePage("dashboard");
+    toast.success("Berhasil keluar aplikasi");
+  };
+
+  // Navigation: "dashboard", "dokumen", "coo", "batch", "prompt", "settings"
   const [activePage, setActivePage] = useState("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
@@ -277,6 +304,8 @@ export default function App() {
       finalFiles = fileArray;
     }
 
+    finalFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+
     if (activePage === "coo") {
       if (finalFiles.length > 4) {
         toast.error("Maksimal mengunggah 4 berkas untuk COO.");
@@ -403,6 +432,7 @@ export default function App() {
           files: pageState.uploadedFiles,
           endpoint,
           params,
+          token,
           baseUrl,
           concurrencyLimit,
           onProgress: handleProgress,
@@ -471,8 +501,13 @@ export default function App() {
       });
 
       try {
+        const headers = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
         const response = await fetch(`${baseUrl}${endpoint}`, {
           method: "POST",
+          headers,
           body: formData,
         });
 
@@ -554,6 +589,8 @@ export default function App() {
         return { title: "Batch Processing", desc: "Proses banyak dokumen sekaligus dan gabungkan hasilnya dalam satu file." };
       case "prompt":
         return { title: "Custom Prompt", desc: "Ekstraksi bebas menggunakan prompt kustom sesuai kebutuhan Anda." };
+      case "settings":
+        return { title: "Pengaturan", desc: "Manajemen pengguna dan sistem keamanan Satnusa AI OCR." };
       default:
         return { title: "Satnusa AI OCR", desc: "Local AI Document Extraction" };
     }
@@ -571,6 +608,15 @@ export default function App() {
     });
   };
 
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080d1a] transition-colors duration-300">
+        <Toaster position="top-right" reverseOrder={false} />
+        <Login baseUrl={baseUrl} onLoginSuccess={handleLoginSuccess} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#080d1a] font-body-main text-slate-900 dark:text-slate-100 transition-colors duration-300">
       <Toaster position="top-right" reverseOrder={false} />
@@ -586,6 +632,7 @@ export default function App() {
         startGuidedTour={handleStartGuidedTour}
         isCollapsed={sidebarCollapsed}
         setIsCollapsed={setSidebarCollapsed}
+        user={user}
       />
 
       {/* Main Content Area Wrapper */}
@@ -598,6 +645,8 @@ export default function App() {
           theme={theme}
           toggleTheme={toggleTheme}
           startGuidedTour={handleStartGuidedTour}
+          user={user}
+          onLogout={handleLogout}
         />
 
         {/* Main View content */}
@@ -610,12 +659,14 @@ export default function App() {
           ) : (
             <div className="w-full space-y-6">
               {/* Stepper Progress Indicator */}
-              <Stepper 
-                activePage={activePage}
-                currentStep={getStepperStep()}
-                onStepClick={handleStepClick}
-                isProcessing={pageStates[activePage]?.isProcessing}
-              />
+              {activePage !== "settings" && (
+                <Stepper 
+                  activePage={activePage}
+                  currentStep={getStepperStep()}
+                  onStepClick={handleStepClick}
+                  isProcessing={pageStates[activePage]?.isProcessing}
+                />
+              )}
 
               {/* Action Pages Switches (rendered with CSS visibility toggles to keep each tab's state & DocumentPreviewer alive) */}
               <div className={activePage === "dokumen" ? "block" : "hidden"}>
@@ -649,6 +700,12 @@ export default function App() {
                   {...getPropsForPage("prompt")}
                   handlePromptExampleClick={handlePromptExampleClick}
                 />
+              </div>
+
+              <div className={activePage === "settings" ? "block" : "hidden"}>
+                {user?.role === "admin" && (
+                  <Settings baseUrl={baseUrl} token={token} currentUser={user} />
+                )}
               </div>
             </div>
           )}

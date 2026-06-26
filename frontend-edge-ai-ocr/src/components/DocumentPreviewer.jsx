@@ -58,7 +58,9 @@ function findBboxLeaves(val, currentKey = "") {
           isAbsolute: true,
           confidence: "confidence" in val && val.confidence !== null && !isNaN(Number(val.confidence)) ? Number(val.confidence) : null,
           text: val.text,
-          page_no: "page_no" in val ? val.page_no : null
+          page_no: "page_no" in val ? val.page_no : null,
+          status: "status" in val ? val.status : null,
+          validation_errors: "validation_errors" in val ? val.validation_errors : null
         }];
       }
       return [];
@@ -72,7 +74,9 @@ function findBboxLeaves(val, currentKey = "") {
           isAbsolute: false,
           confidence: "confidence" in val && val.confidence !== null && !isNaN(Number(val.confidence)) ? Number(val.confidence) : null,
           text: val.value,
-          page_no: null
+          page_no: null,
+          status: "status" in val ? val.status : null,
+          validation_errors: "validation_errors" in val ? val.validation_errors : null
         }];
       }
       return [];
@@ -94,6 +98,7 @@ export default function DocumentPreviewer({
   onPagesChange,
   showPageSelector,
   ocrResult,
+  isEmbedded = false,
 }) {
   const [fileType, setFileType] = useState(null); // 'pdf' or 'images'
   const [currentPage, setCurrentPage] = useState(1);
@@ -103,6 +108,7 @@ export default function DocumentPreviewer({
   // Image states
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [imageUrls, setImageUrls] = useState([]);
+  const [hoveredBoxIndex, setHoveredBoxIndex] = useState(null);
 
   // PDF.js rendering states
   const canvasRef = useRef(null);
@@ -468,31 +474,160 @@ export default function DocumentPreviewer({
         sortedHeight = -sortedHeight;
       }
 
+      // Resolve status and color styling dynamically
+      const status = box.status;
+      let statusColor = "#10b981"; // default green (high confidence/exact match)
+      let statusLabel = "Pas Sempurna";
+      let statusIcon = "check_circle";
+      let borderStyle = "solid";
+      let badgeBg = "bg-emerald-500";
+      let hoverBg = "rgba(16, 185, 129, 0.03)";
+      let activeBg = "rgba(16, 185, 129, 0.08)";
+
+      if (status === "text_modified") {
+        statusColor = "#10b981";
+        statusLabel = "Teks Disesuaikan";
+        statusIcon = "edit_note";
+        borderStyle = "dashed";
+        badgeBg = "bg-indigo-500";
+        hoverBg = "rgba(99, 102, 241, 0.03)";
+        activeBg = "rgba(99, 102, 241, 0.08)";
+      } else if (status === "low_confidence") {
+        statusColor = "#f59e0b"; // amber
+        statusLabel = "Akurasi Rendah";
+        statusIcon = "warning";
+        badgeBg = "bg-amber-500";
+        hoverBg = "rgba(245, 158, 11, 0.03)";
+        activeBg = "rgba(245, 158, 11, 0.08)";
+      } else if (status === "uncertain") {
+        statusColor = "#ef4444"; // red
+        statusLabel = "Perlu Verifikasi";
+        statusIcon = "gpp_maybe";
+        badgeBg = "bg-red-500";
+        hoverBg = "rgba(239, 68, 68, 0.03)";
+        activeBg = "rgba(239, 68, 68, 0.08)";
+      } else if (status === "not_found_in_ocr") {
+        statusColor = "#f03b3bff"; 
+        statusLabel = "Tidak Ada di OCR";
+        statusIcon = "search_off";
+        borderStyle = "dotted";
+        badgeBg = "bg-pink-500";
+        hoverBg = "rgba(236, 72, 153, 0.03)";
+        activeBg = "rgba(236, 72, 153, 0.08)";
+      } else {
+        // No status, check confidence score
+        if (box.confidence !== null) {
+          if (box.confidence < 0.60) {
+            statusColor = "#ef4444";
+            statusLabel = "Perlu Verifikasi";
+            statusIcon = "gpp_maybe";
+            badgeBg = "bg-red-500";
+            hoverBg = "rgba(239, 68, 68, 0.03)";
+            activeBg = "rgba(239, 68, 68, 0.08)";
+          } else if (box.confidence < 0.85) {
+            statusColor = "#f59e0b";
+            statusLabel = "Akurasi Rendah";
+            statusIcon = "warning";
+            badgeBg = "bg-amber-500";
+            hoverBg = "rgba(245, 158, 11, 0.03)";
+            activeBg = "rgba(245, 158, 11, 0.08)";
+          }
+        }
+      }
+
+      const isHovered = hoveredBoxIndex === idx;
+      const isTooHigh = sortedTop < 185;
+
       return (
         <div
           key={idx}
-          className="absolute border-2 rounded hover:bg-black/10 group cursor-pointer transition-all duration-150 ease-in-out"
+          className="absolute border-2 rounded group cursor-pointer transition-all duration-200 ease-out pointer-events-auto"
           style={{
             left: `${sortedLeft}px`,
             top: `${sortedTop}px`,
             width: `${sortedWidth}px`,
             height: `${sortedHeight}px`,
-            borderColor:   "#ef4444", // red,
-            zIndex: 10,
+            borderColor: statusColor,
+            borderStyle: borderStyle,
+            backgroundColor: isHovered ? activeBg : hoverBg,
+            boxShadow: isHovered ? `0 0 12px 2px ${statusColor}70` : `0 0 4px ${statusColor}20`,
+            transform: isHovered ? "scale(1.02)" : "scale(1)",
+            zIndex: isHovered ? 100 : 10,
           }}
+          onMouseEnter={() => setHoveredBoxIndex(idx)}
+          onMouseLeave={() => setHoveredBoxIndex(null)}
         >
+          {/* Permanent confidence / status badge on top-right of the box */}
+          <div
+            className={`absolute -top-3 right-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-extrabold text-white shadow-md select-none pointer-events-none transition-all duration-200 z-20`}
+            style={{ transform: isHovered ? "scale(1.1) translateY(-2px)" : "scale(1)", backgroundColor: statusColor }}
+          >
+            <span className="leading-none">
+              {box.confidence !== null ? `${Math.round(box.confidence * 100)}%` : (status === "text_modified" ? "MOD" : (status === "uncertain" ? "UNC" : (status === "not_found_in_ocr" ? "NF" : "!")))}
+            </span>
+          </div>
+
           {/* Tooltip Badge on hover */}
           <div
-            className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1.5 hidden group-hover:flex flex-col items-center pointer-events-none select-none z-50 animate-fade-in"
-            style={{ minWidth: "120px" }}
+            className={`absolute left-1/2 transform -translate-x-1/2 hidden group-hover:flex flex-col items-center pointer-events-none select-none z-50 transition-all duration-200 animate-fade-in ${
+              isTooHigh ? "top-full mt-2" : "bottom-full mb-2"
+            }`}
+            style={{ minWidth: "180px" }}
           >
-            <div className="bg-slate-900/95 dark:bg-slate-950/95 text-white text-[10px] rounded px-2.5 py-1.5 shadow-lg border border-slate-700/30 flex flex-col items-center gap-0.5">
-              <span className="font-bold text-slate-350 tracking-wide uppercase text-[9px]">{box.key}</span>
+            {/* Tooltip arrow at top (pointing up) */}
+            {isTooHigh && (
+              <div className="w-2.5 h-2.5 bg-white/95 dark:bg-slate-900/95 rotate-45 -mb-1.5 border-l border-t border-slate-200 dark:border-slate-700/80 z-10"></div>
+            )}
+
+            <div className="bg-white/95 dark:bg-slate-900/95 text-slate-850 dark:text-white rounded-lg p-3 shadow-2xl border border-slate-200 dark:border-slate-700/80 flex flex-col gap-2 w-full relative z-20">
+              {/* Field Key & Status Badges */}
+              <div className="flex items-center justify-between gap-1 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                <span className="font-bold text-slate-700 dark:text-slate-200 tracking-wide uppercase text-[10px] truncate max-w-[100px]">{box.key}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider text-white ${badgeBg}`}>
+                  {statusLabel}
+                </span>
+              </div>
+
+              {/* Text Value */}
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider">Nilai Terdeteksi</span>
+                <span className="font-mono text-slate-800 dark:text-slate-100 text-[10px] break-words bg-slate-50 dark:bg-slate-950/50 p-1.5 rounded border border-slate-100 dark:border-slate-800/50">
+                  {box.text || "—"}
+                </span>
+              </div>
+
+              {/* Confidence Progress */}
               {box.confidence !== null && (
-                <span className="font-mono text-emerald-400 font-semibold">Conf: {Math.round(box.confidence * 100)}%</span>
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  <div className="flex items-center justify-between text-[8px] font-medium uppercase tracking-wider text-slate-400">
+                    <span>Confidence</span>
+                    <span className="font-mono font-bold" style={{ color: statusColor }}>{Math.round(box.confidence * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${box.confidence * 100}%`, backgroundColor: statusColor }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Errors list */}
+              {box.validation_errors && box.validation_errors.length > 0 && (
+                <div className="flex flex-col gap-0.5 border-t border-slate-100 dark:border-slate-800 pt-1 mt-0.5">
+                  <ul className="list-disc pl-3 text-red-650 dark:text-red-300 text-[9px] font-semibold space-y-0.5">
+                    {box.validation_errors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
-            <div className="w-1.5 h-1.5 bg-slate-900/95 dark:bg-slate-950/95 rotate-45 -mt-1 border-r border-b border-slate-700/30"></div>
+
+            {/* Tooltip arrow at bottom (pointing down) */}
+            {!isTooHigh && (
+              <div className="w-2.5 h-2.5 bg-white/95 dark:bg-slate-900/95 rotate-45 -mt-1.5 border-r border-b border-slate-200 dark:border-slate-700/80 z-10"></div>
+            )}
           </div>
         </div>
       );
@@ -513,7 +648,11 @@ export default function DocumentPreviewer({
 
   return (
     <div
-      className="bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant rounded-xl shadow-sm flex flex-col h-[650px] lg:h-[calc(100vh-12rem)] min-h-[500px] transition-colors duration-300 overflow-hidden"
+      className={
+        isEmbedded
+          ? "flex-1 flex flex-col min-h-0 overflow-hidden transition-colors duration-300"
+          : "bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant rounded-xl shadow-sm flex flex-col h-[650px] lg:h-[calc(100vh-12rem)] min-h-[500px] transition-colors duration-300 overflow-hidden"
+      }
       id="document-previewer-container"
     >
       {/* Top Header Controls */}
@@ -608,8 +747,8 @@ export default function DocumentPreviewer({
               type="button"
               onClick={() => setActivePdfIndex(idx)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all select-none cursor-pointer ${activePdfIndex === idx
-                  ? "bg-secondary/15 border-secondary text-secondary dark:bg-secondary/35 dark:border-primary-fixed dark:text-primary-fixed-dim"
-                  : "border-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/20 text-on-surface-variant dark:text-surface-variant bg-white dark:bg-inverse-surface"
+                ? "bg-secondary/15 border-secondary text-secondary dark:bg-secondary/35 dark:border-primary-fixed dark:text-primary-fixed-dim"
+                : "border-outline-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/20 text-on-surface-variant dark:text-surface-variant bg-white dark:bg-inverse-surface"
                 }`}
             >
               <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>

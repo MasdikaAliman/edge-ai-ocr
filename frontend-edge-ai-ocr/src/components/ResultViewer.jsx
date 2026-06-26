@@ -65,15 +65,16 @@ function getHighlightedJson(jsonObj) {
   );
 }
 
-export default function ResultViewer({ 
-  ocrResult, 
+export default function ResultViewer({
+  ocrResult,
   setOcrResult,
-  activeMode, 
-  selectedDocType, 
-  directoryHandle, 
+  activeMode,
+  selectedDocType,
+  directoryHandle,
   uploadedFiles,
   isProcessing,
-  progressInfo
+  progressInfo,
+  isEmbedded = false
 }) {
   const [customFilename, setCustomFilename] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -143,7 +144,7 @@ export default function ResultViewer({
       if (uploadedFiles && uploadedFiles.length > 0) {
         // Remove extension (e.g. .pdf, .jpg, .png)
         baseName = uploadedFiles[0].name.replace(/\.[^/.]+$/, "");
-        
+
         // If there are multiple files (batch images), append _batch
         if (uploadedFiles.length > 1) {
           baseName += "_batch";
@@ -154,7 +155,7 @@ export default function ResultViewer({
       const pad = (num) => String(num).padStart(2, '0');
       const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
       const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      
+
       return `${baseName}_${dateStr}_${timeStr}.${ext}`;
     }
 
@@ -219,7 +220,11 @@ export default function ResultViewer({
 
   return (
     <div
-      className="bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant rounded-xl shadow-sm overflow-hidden transition-colors duration-300 flex flex-col h-[650px] lg:h-[calc(100vh-12rem)] min-h-[500px]"
+      className={
+        isEmbedded
+          ? "flex-1 flex flex-col min-h-0 overflow-hidden transition-colors duration-300"
+          : "bg-white dark:bg-inverse-surface border border-border-subtle dark:border-outline-variant rounded-xl shadow-sm overflow-hidden transition-colors duration-300 flex flex-col h-[650px] lg:h-[calc(100vh-12rem)] min-h-[500px]"
+      }
       id="ocr-results-container"
     >
       <div className="px-6 py-3 border-b border-border-subtle dark:border-outline-variant flex items-center justify-between bg-surface-container-low dark:bg-on-surface-variant/10">
@@ -250,11 +255,10 @@ export default function ResultViewer({
                 setJsonError(null);
               }
             }}
-            className={`px-4 py-1.5 rounded-lg text-body-sm font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer ${
-              isEditing
+            className={`px-4 py-1.5 rounded-lg text-body-sm font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer ${isEditing
                 ? "bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700"
                 : "bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/20"
-            }`}
+              }`}
           >
             <span className="material-symbols-outlined text-[18px]">
               {isEditing ? "check" : "edit"}
@@ -264,9 +268,8 @@ export default function ResultViewer({
           <button
             onClick={handleDownloadJson}
             disabled={isEditing}
-            className={`bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-surface-container dark:hover:bg-on-surface-variant/20 transition-all flex items-center gap-2 shadow-sm ${
-              isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-            }`}
+            className={`bg-white dark:bg-on-background border border-outline-variant dark:border-outline text-on-surface-variant dark:text-surface-variant px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-surface-container dark:hover:bg-on-surface-variant/20 transition-all flex items-center gap-2 shadow-sm ${isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+              }`}
             title={isEditing ? "Selesaikan pengeditan untuk mengunduh" : "Unduh JSON"}
           >
             <span className="material-symbols-outlined text-[18px]">
@@ -277,9 +280,8 @@ export default function ResultViewer({
           <button
             onClick={handleDownloadExcel}
             disabled={isEditing}
-            className={`bg-service-ready/10 border border-service-ready text-service-ready px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-service-ready hover:text-white transition-all flex items-center gap-2 shadow-sm ${
-              isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-            }`}
+            className={`bg-service-ready/10 border border-service-ready text-service-ready px-4 py-1.5 rounded-lg text-body-sm font-semibold hover:bg-service-ready hover:text-white transition-all flex items-center gap-2 shadow-sm ${isEditing ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+              }`}
             title={isEditing ? "Selesaikan pengeditan untuk mengunduh" : "Unduh Excel"}
           >
             <span className="material-symbols-outlined text-[18px]">
@@ -290,19 +292,19 @@ export default function ResultViewer({
         </div>
       </div>
       {/* File Name Customizer */}
-      <div className="px-6 py-2.5 border-b border-border-subtle dark:border-outline-variant bg-surface-container-lowest dark:bg-inverse-surface/40 flex items-center gap-3">
-        <span className="material-symbols-outlined text-[18px] text-on-surface-variant dark:text-surface-variant select-none">drive_file_rename_outline</span>
+      <div className="px-6 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center gap-3">
+        <span className="material-symbols-outlined text-[18px] text-slate-400 dark:text-slate-500 select-none font-medium">drive_file_rename_outline</span>
         <input
           type="text"
           value={customFilename}
           onChange={(e) => setCustomFilename(e.target.value)}
           placeholder="Nama file ekspor kustom (opsional)..."
-          className="flex-1 bg-transparent text-xs text-on-surface dark:text-on-primary placeholder-on-surface-variant/50 focus:outline-none"
+          className="flex-1 bg-transparent text-xs text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none font-semibold"
         />
         {customFilename && (
           <button
             onClick={() => setCustomFilename("")}
-            className="material-symbols-outlined text-[16px] text-on-surface-variant dark:text-surface-variant hover:text-red-500 transition-colors cursor-pointer"
+            className="material-symbols-outlined text-[16px] text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer"
             title="Bersihkan"
           >
             close

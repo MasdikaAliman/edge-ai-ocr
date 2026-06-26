@@ -8,6 +8,7 @@ export async function processBatch({
   files,
   endpoint,
   params,
+  token,
   baseUrl = "http://localhost:5030",
   concurrencyLimit = 3,
   onProgress = () => {},
@@ -26,8 +27,20 @@ export async function processBatch({
     const runNext = async () => {
       // If queue is empty and no active requests, we're done!
       if (queue.length === 0 && activeRequests.size === 0) {
+        // Sort results and failures to match the order of the original files array
+        results.sort((a, b) => {
+          const indexA = files.findIndex((f) => f.name === a.filename);
+          const indexB = files.findIndex((f) => f.name === b.filename);
+          return indexA - indexB;
+        });
+        failures.sort((a, b) => {
+          const indexA = files.findIndex((f) => f.name === a.filename);
+          const indexB = files.findIndex((f) => f.name === b.filename);
+          return indexA - indexB;
+        });
+
         // Perform merge logic
-        const mergedData = mergeResults(results);
+        const mergedData = mergeResults(results, files);
         resolve({
           success: failures.length < total,
           batch_summary: {
@@ -70,8 +83,14 @@ export async function processBatch({
               }
             }
             
+            const headers = {};
+            if (token) {
+              headers["Authorization"] = `Bearer ${token}`;
+            }
+
             const response = await fetch(`${baseUrl.replace(/\/$/, "")}${endpoint}`, {
               method: "POST",
+              headers,
               body: formData,
             });
 
@@ -135,16 +154,21 @@ export async function processBatch({
  * - Combine results into an array of objects
  * - Ensure uniform structure by padding missing fields with `null`
  */
-function mergeResults(results) {
-  if (results.length === 0) return [];
+function mergeResults(results, files) {
+  if (!files || files.length === 0) return [];
 
-  // Extract inner extracted_data objects and add _source
-  const itemDataList = results.map((res) => {
-    const rawData = res.data.data || {};
-    // Ensure it's an object
-    const obj = typeof rawData === "object" && !Array.isArray(rawData) ? { ...rawData } : { raw_output: rawData };
-    obj._source = res.filename;
-    return obj;
+  // Map over the original files list to preserve order and include failures as empty placeholders
+  const itemDataList = files.map((file) => {
+    const res = results.find((r) => r.filename === file.name);
+    if (res) {
+      const rawData = res.data.data || {};
+      const obj = typeof rawData === "object" && !Array.isArray(rawData) ? { ...rawData } : { raw_output: rawData };
+      obj._source = file.name;
+      return obj;
+    } else {
+      // Failed file placeholder
+      return { _source: file.name };
+    }
   });
 
   // Find all unique keys across all records
