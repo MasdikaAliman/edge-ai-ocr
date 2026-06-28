@@ -72,9 +72,7 @@ OUTPUT FORMAT:
 - Do NOT wrap output in "success", "data", "result", or any envelope object.
 - Do NOT add any text before or after the JSON.
 {_OUTPUT_VALIDATION}
-{_CURRENCY_RULE}
 {_DATE_RULE}
-{NUMERIC_RULE}
 {_GROUNDED_RULES}
 """
 

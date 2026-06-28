@@ -148,37 +148,11 @@ FIELD-SPECIFIC RULES:
    - If "SEUMUR HIDUP" appears, return exactly "SEUMUR HIDUP".
    - Otherwise return the date exactly as printed.
    - Do NOT normalize the date.
+CRITICAL: Output MUST use grounded format:
+{{"field": {{"value": "...", "sources": ["F000X"]}}}}
 
-FEW-SHOT EXAMPLE:
----
-INPUT:
-Image: [KTP Image]
-RAW OCR: PROVINSI DKI JAKARTA KOTA JAKARTA BARAT NIK: 3173010203040005 Nama: BUDI SANTOSO Tempat/Tgl Lahir: JAKARTA, 10-10-1990 Jenis Kelamin: LAKI-LAKI Alamat: JL. RAYA MERDEKA NO. 10 RT/RW: 002/005 Kel/Desa: MERUYA UTARA Kecamatan: KEMBANGAN Agama: ISLAM Status Perkawinan: KAWIN Pekerjaan: KARYAWAN SWASTA Kewarganegaraan: WNI Berlaku Hingga: SEUMUR HIDUP
-
-OUTPUT:
-{{
-  "provinsi": "DKI JAKARTA",
-  "kabupaten_kota": "KOTA JAKARTA BARAT",
-  "nik": "3173010203040005",
-  "nama": "BUDI SANTOSO",
-  "tempat_lahir": "JAKARTA",
-  "tanggal_lahir": "10-10-1990",
-  "jenis_kelamin": "LAKI-LAKI",
-  "golongan_darah": "-",
-  "alamat": "JL. RAYA MERDEKA NO. 10",
-  "rt_rw": "002/005",
-  "kelurahan_desa": "MERUYA UTARA",
-  "kecamatan": "KEMBANGAN",
-  "agama": "ISLAM",
-  "status_perkawinan": "KAWIN",
-  "pekerjaan": "KARYAWAN SWASTA",
-  "kewarganegaraan": "WNI",
-  "berlaku_hingga": "SEUMUR HIDUP"
-}}
----
-
-Extract all fields from this KTP image. Return a JSON object with this exact schema:
-{KTP_SCHEMA}
+Example from above context:
+{{"nik": {{"value": "910001", "sources": ["F0003"]}}}}
 """
 
 KK_PROMPT = f"""You are an expert OCR engine specialized in Indonesian Kartu Keluarga (KK / Family Card).

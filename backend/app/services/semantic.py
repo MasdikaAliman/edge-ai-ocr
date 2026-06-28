@@ -11,7 +11,7 @@ from app.core.config import model, MODEL_NAME, logger
 from app.services.pdf import PageImage
 from app.services.ocr_engine import run_ocr_on_image, OCRFragment
 from app.services.fragment_store import FragmentStore
-from app.core.grounded_prompt import build_grounded_context
+from app.core.grounded_prompt import build_grounded_context, GROUNDED_REMINDER
 from app.core.semantic_prompt import (
     get_doctype_semantic_prompt,
     get_fields_semantic_prompt,
@@ -329,7 +329,8 @@ async def run_semantic(
             text_content = f"{ocr_context}"
         content = [
             pil_to_content_item(page_img["image"]),
-            {"type": "text", "text": text_content}
+            {"type": "text", "text": text_content},
+            {"type": "text", "text": GROUNDED_REMINDER}
         ]
         messages = [
             SystemMessage(content=prompt),

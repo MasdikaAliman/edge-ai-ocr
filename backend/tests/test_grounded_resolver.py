@@ -173,3 +173,25 @@ def test_fuzzy_locate_fallback():
     assert resolved["provinsi"]["bbox"] == [50, 10, 150, 25]
     assert resolved["provinsi"]["status"] == "verified"
 
+
+def test_null_field_label_fallback():
+    store = FragmentStore()
+    store.add(
+        text="PROVINSI",
+        bbox=[50, 10, 150, 25],
+        confidence=0.96,
+        page_no=1,
+    )
+    
+    extracted = {
+        "provinsi": None
+    }
+    
+    resolved = resolve_grounded_json(extracted, store)
+    
+    assert resolved["provinsi"]["text"] is None
+    assert resolved["provinsi"]["bbox"] == [50, 10, 150, 25]
+    assert resolved["provinsi"]["status"] == "not_found"
+    assert resolved["provinsi"]["ocr_text"] == "PROVINSI"
+
+

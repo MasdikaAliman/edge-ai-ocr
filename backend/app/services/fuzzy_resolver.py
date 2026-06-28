@@ -377,6 +377,7 @@ def fuzzy_locate_value(
                 bbox = lbl_bbox
                 confidence = lbl_conf
                 page_no = lbl_page
+                matched_text = lbl_matched
                 break
 
     fragments_found = 1 if value_found_in_ocr else 0

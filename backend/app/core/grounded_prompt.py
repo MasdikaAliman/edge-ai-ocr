@@ -95,3 +95,12 @@ For table rows, each cell value should also have "value" and "sources":
 def get_grounded_output_instruction() -> str:
     """Return the grounded output instruction block to be appended to prompts."""
     return GROUNDED_OUTPUT_INSTRUCTION
+
+
+GROUNDED_REMINDER = """
+CRITICAL: Output MUST use grounded format:
+{"field": {"value": "...", "sources": ["F000X"]}}
+
+Example from above context:
+{"nik": {"value": "910001", "sources": ["F0003"]}}
+"""

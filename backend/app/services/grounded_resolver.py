@@ -76,8 +76,8 @@ def _resolve_single_field(
     ocr_text = resolved["ocr_text"]
     fragments_found = resolved["fragments_found"]
 
-    if fragments_found == 0 and not is_missing:
-        if fallback_fn:
+    if fragments_found == 0:
+        if fallback_fn and not is_missing:
             return fallback_fn(value_str, key)
         f_bbox, f_conf, f_page, f_matched, f_found = fuzzy_locate_value(
             key, value_str, store.to_ocr_fragments()
@@ -167,7 +167,7 @@ def resolve_grounded_json(
     - Arrays/tables: {"table": [{"col": {"value": "...", "sources": [...]}}]}
     - Mixed: some fields grounded, some plain (for backward compat)
     """
-    if extracted_json is None:
+    if extracted_json is None and not current_key:
         return None
 
     # Grounded leaf node
