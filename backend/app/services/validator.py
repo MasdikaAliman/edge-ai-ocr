@@ -197,41 +197,62 @@ def validate_field(field_name: str, value: Any) -> List[str]:
                 
     return errors
 
-def compute_validation_summary(doc_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+
+def validate_grounded_field(
+    field_name: str,
+    value: Any,
+    ocr_text: Optional[str],
+    confidence: Optional[float],
+    fragments_found: int,
+    total_sources: int
+) -> Dict[str, Any]:
     """
-    Computes overall validation summary for the parsed document data.
+    Enhanced validation checks for grounded fields.
+    Returns a dict containing:
+        - "valid": bool
+        - "errors": List[str]
+        - "status": str
     """
-    required = get_required_fields_from_schema(doc_type)
-    print(required)
-    field_reports = {}
-    valid_fields_count = 0
-    total_checked = 0
-    
-    # Check required fields
-    for field in required:
-        val = data.get(field)
-        # Skip lists or complex objects for simple field validation checks
-        if isinstance(val, (dict, list)):
-            field_reports[field] = {"valid": True, "errors": []}
-            valid_fields_count += 1
-            total_checked += 1
-            continue
-            
-        errors = validate_field(field, val)
-        is_valid = len(errors) == 0
-        field_reports[field] = {
-            "valid": is_valid,
-            "errors": errors
+    value_str = "" if value is None else str(value).strip()
+    is_missing = not value_str or value_str.lower() in ("null", "none", "-")
+
+    val_errors = validate_field(field_name, value_str) if field_name else []
+    has_val_errors = len(val_errors) > 0
+
+    if is_missing:
+        return {
+            "valid": False,
+            "errors": val_errors if val_errors else ["Field is missing or empty"],
+            "status": "not_found"
         }
-        total_checked += 1
-        if is_valid:
-            valid_fields_count += 1
-            
-    accuracy_score = round(valid_fields_count / max(1, total_checked), 4)
-    
+
+    def clean(s):
+        return re.sub(r"[\s\W_]+", "", s.lower()) if s else ""
+
+    is_exact = False
+    if fragments_found > 0 and ocr_text:
+        is_exact = clean(value_str) == clean(ocr_text)
+
+    # Determine status
+    if has_val_errors:
+        if fragments_found == 0:
+            status = "not_found"
+        else:
+            status = "format_invalid"
+    elif fragments_found == 0:
+        status = "not_found"
+    elif fragments_found < total_sources:
+        status = "partial_match"
+    elif not is_exact:
+        status = "value_mismatch"
+    elif confidence is not None and confidence < 0.85:
+        status = "low_confidence"
+    else:
+        status = "verified"
+
     return {
-        "document_type": doc_type,
-        "is_complete": all(r["valid"] for r in field_reports.values()),
-        "accuracy_score": accuracy_score,
-        "fields": field_reports
+        "valid": not has_val_errors and status not in ("not_found", "value_mismatch"),
+        "errors": val_errors,
+        "status": status
     }
+

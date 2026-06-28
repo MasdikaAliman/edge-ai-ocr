@@ -1,6 +1,7 @@
 import json
 from app.core import sys_prompt
 from app.core.doc_prompt import DOCUMENT_PROMPTS
+from app.core.grounded_prompt import get_grounded_output_instruction
 import re
 from fastapi import HTTPException
 
@@ -13,6 +14,7 @@ def get_fields_semantic_prompt(fields: list[str]) -> str:
     from app.core.sys_prompt import BASE_DIRECTIVES
     field_list = "\n".join(f"  - `{f}`" for f in fields)
     schema = {f: "string | null" for f in fields}
+    grounded = get_grounded_output_instruction()
     return f"""You are a high-precision document extraction engine.
 Your task is to extract ONLY the specific fields listed below.
 
@@ -23,10 +25,13 @@ TARGET FIELDS TO EXTRACT:
 
 Please extract all fields from the document image and OCR text. Return a JSON object matching this exact schema:
 {json.dumps(schema, indent=2)}
+
+{grounded}
 """
 
 def get_custom_semantic_prompt(custom_prompt: str) -> str:
     from app.core.sys_prompt import BASE_DIRECTIVES
+    grounded = get_grounded_output_instruction()
     return f"""You are a flexible document extraction assistant.
     Your primary directive is to follow the user's custom prompt below.
 
@@ -50,6 +55,8 @@ def get_custom_semantic_prompt(custom_prompt: str) -> str:
     - Follow the format the user requests (JSON, CSV, text, etc.).
     - If no specific format is requested, output JSON.
     - Use snake_case for any keys you invent yourself.
+
+    {grounded}
 
 """
 

@@ -1,6 +1,9 @@
 # ─────────────────────────────────────────────
 #  OCR System Prompt Definitions (Simplified)
 # ─────────────────────────────────────────────
+from app.core.grounded_prompt import get_grounded_output_instruction
+
+_GROUNDED_RULES = get_grounded_output_instruction()
 
 _LAST_VALUE_FIELDS = {
     "total_amount", "grand_total", "amount_due", 
@@ -72,6 +75,7 @@ OUTPUT FORMAT:
 {_CURRENCY_RULE}
 {_DATE_RULE}
 {NUMERIC_RULE}
+{_GROUNDED_RULES}
 """
 
 BASE_DIRECTIVES_COO = f"""
@@ -92,6 +96,7 @@ OUTPUT FORMAT:
 {_CURRENCY_RULE}
 {_COO_RULE_DATE}
 {NUMERIC_RULE}
+{_GROUNDED_RULES}
 """
 
 # ---------- Simplified Schemas (without bbox_2d) ----------

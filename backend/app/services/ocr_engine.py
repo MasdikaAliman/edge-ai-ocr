@@ -1,6 +1,6 @@
 import sys
 import types
-from typing import TypedDict, List, Any
+from typing import TypedDict, List, Any, Optional
 
 # Mock legacy langchain modules required by paddleocr/paddlex internal code
 try:
@@ -44,11 +44,12 @@ _ocr_instance = None
 
 
 
-class OCRFragment(TypedDict):
+class OCRFragment(TypedDict, total=False):
     text: str
     bbox: List[int]       # [x_min, y_min, x_max, y_max] absolute pixels
     confidence: float     # 0.0 – 1.0 from PaddleOCR recognition score
     page_no: int
+    fragment_id: str      # Assigned by FragmentStore (optional, not set by OCR engine)
 
 def get_ocr_engine():
     global _ocr_instance
@@ -61,9 +62,8 @@ def get_ocr_engine():
                     use_textline_orientation=False,
                     enable_mkldnn=False,
                     device="gpu" if PADDLE_USE_GPU else "cpu",
-                    enable_hpi=True,
-                    precision="fp16",
-                    engine="paddle_static",
+                    # precision="fp16",
+                    # engine="paddle_static",
                 )
     return _ocr_instance
 

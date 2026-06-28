@@ -1,5 +1,5 @@
 import pytest
-from app.services.validator import validate_field, compute_validation_summary, get_required_fields_from_schema
+from app.services.validator import validate_field, get_required_fields_from_schema, validate_grounded_field
 
 def test_get_required_fields_from_schema():
     ktp_fields = get_required_fields_from_schema("KTP")
@@ -44,38 +44,6 @@ def test_validate_field_date():
     errs = validate_field("tanggal_lahir", "32-13-2020")
     assert any("Logical validation failure" in e for e in errs)
 
-def test_compute_validation_summary():
-    data = {
-        "nik": "1234567890123456",
-        "nama": "BUDI SANTOSO SUDRAJAT",
-        "tempat_lahir": "JAKARTA",
-        "tanggal_lahir": "10-10-1990",
-        "alamat": "JL. MERDEKA NO 10",
-        "rt_rw": "001/002",
-        "kelurahan_desa": "MERUYA",
-        "kecamatan": "KEMBANGAN",
-        "agama": "ISLAM",
-        "status_perkawinan": "KAWIN",
-        "pekerjaan": "KARYAWAN",
-        "kewarganegaraan": "WNI",
-        "berlaku_hingga": "SEUMUR HIDUP",
-        "provinsi": "DKI JAKARTA",
-        "kabupaten_kota": "JAKARTA BARAT",
-        "jenis_kelamin": "LAKI-LAKI",
-        "golongan_darah": "O"
-    }
-    
-    summary = compute_validation_summary("KTP", data)
-    assert summary["document_type"] == "KTP"
-    assert summary["is_complete"] is True
-    assert summary["accuracy_score"] == 1.0
-    
-    # Intentionally break one field to test validation failure
-    data["nik"] = "123"
-    summary_invalid = compute_validation_summary("KTP", data)
-    assert summary_invalid["is_complete"] is False
-    assert summary_invalid["accuracy_score"] < 1.0
-    assert summary_invalid["fields"]["nik"]["valid"] is False
 
 def test_new_validation_rules():
     # rt_rw
@@ -132,5 +100,69 @@ def test_get_label_candidates():
     assert "Invoice Date" in get_label_candidates("invoice_date")
     assert "TOTAL AMOUNT" in get_label_candidates("total_amount")
     assert "custom_field" in get_label_candidates("custom_field")
+
+
+def test_validate_grounded_field():
+    # 1. verified status
+    res = validate_grounded_field(
+        field_name="nik",
+        value="1234567890123456",
+        ocr_text="1234567890123456",
+        confidence=0.95,
+        fragments_found=1,
+        total_sources=1
+    )
+    assert res["status"] == "verified"
+    assert res["valid"] is True
+    assert len(res["errors"]) == 0
+
+    # 2. value_mismatch status
+    res = validate_grounded_field(
+        field_name="nik",
+        value="1234567890123456",
+        ocr_text="1234567890123455",
+        confidence=0.95,
+        fragments_found=1,
+        total_sources=1
+    )
+    assert res["status"] == "value_mismatch"
+    assert res["valid"] is False
+
+    # 3. format_invalid status
+    res = validate_grounded_field(
+        field_name="nik",
+        value="12345",
+        ocr_text="12345",
+        confidence=0.95,
+        fragments_found=1,
+        total_sources=1
+    )
+    assert res["status"] == "format_invalid"
+    assert res["valid"] is False
+
+    # 4. partial_match status
+    res = validate_grounded_field(
+        field_name="alamat",
+        value="JL MELATI",
+        ocr_text="JL MELATI",
+        confidence=0.95,
+        fragments_found=1,
+        total_sources=2
+    )
+    assert res["status"] == "partial_match"
+    assert res["valid"] is True
+
+    # 5. low_confidence status
+    res = validate_grounded_field(
+        field_name="nama",
+        value="BUDI",
+        ocr_text="BUDI",
+        confidence=0.70,
+        fragments_found=1,
+        total_sources=1
+    )
+    assert res["status"] == "low_confidence"
+    assert res["valid"] is True
+
 
 

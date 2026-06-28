@@ -484,7 +484,7 @@ export default function DocumentPreviewer({
       let hoverBg = "rgba(16, 185, 129, 0.03)";
       let activeBg = "rgba(16, 185, 129, 0.08)";
 
-      if (status === "text_modified") {
+      if (status === "value_mismatch" || status === "text_modified") {
         statusColor = "#10b981";
         statusLabel = "Teks Disesuaikan";
         statusIcon = "edit_note";
@@ -499,21 +499,36 @@ export default function DocumentPreviewer({
         badgeBg = "bg-amber-500";
         hoverBg = "rgba(245, 158, 11, 0.03)";
         activeBg = "rgba(245, 158, 11, 0.08)";
-      } else if (status === "uncertain") {
+      } else if (status === "partial_match") {
+        statusColor = "#f97316"; // orange
+        statusLabel = "Cocok Sebagian";
+        statusIcon = "sync_problem";
+        badgeBg = "bg-orange-500";
+        hoverBg = "rgba(249, 115, 22, 0.03)";
+        activeBg = "rgba(249, 115, 22, 0.08)";
+      } else if (status === "format_invalid") {
         statusColor = "#ef4444"; // red
-        statusLabel = "Perlu Verifikasi";
+        statusLabel = "Format Tidak Valid";
         statusIcon = "gpp_maybe";
         badgeBg = "bg-red-500";
         hoverBg = "rgba(239, 68, 68, 0.03)";
         activeBg = "rgba(239, 68, 68, 0.08)";
-      } else if (status === "not_found_in_ocr") {
+      } else if (status === "not_found") {
         statusColor = "#f03b3bff"; 
-        statusLabel = "Tidak Ada di OCR";
+        statusLabel = "Perlu Verifikasi";
         statusIcon = "search_off";
         borderStyle = "dotted";
         badgeBg = "bg-pink-500";
         hoverBg = "rgba(236, 72, 153, 0.03)";
         activeBg = "rgba(236, 72, 153, 0.08)";
+      } else if (status === "verified") {
+        statusColor = "#10b981"; // green
+        statusLabel = "Pas Sempurna";
+        statusIcon = "check_circle";
+        borderStyle = "solid";
+        badgeBg = "bg-emerald-500";
+        hoverBg = "rgba(16, 185, 129, 0.03)";
+        activeBg = "rgba(16, 185, 129, 0.08)";
       } else {
         // No status, check confidence score
         if (box.confidence !== null) {
@@ -563,7 +578,19 @@ export default function DocumentPreviewer({
             style={{ transform: isHovered ? "scale(1.1) translateY(-2px)" : "scale(1)", backgroundColor: statusColor }}
           >
             <span className="leading-none">
-              {box.confidence !== null ? `${Math.round(box.confidence * 100)}%` : (status === "text_modified" ? "MOD" : (status === "uncertain" ? "UNC" : (status === "not_found_in_ocr" ? "NF" : "!")))}
+              {box.confidence !== null
+                ? `${Math.round(box.confidence * 100)}%`
+                : (status === "value_mismatch" || status === "text_modified"
+                  ? "MOD"
+                  : (status === "format_invalid" 
+                    ? "ERR"
+                    : (status === "not_found" 
+                      ? "NF"
+                      : (status === "partial_match"
+                        ? "PRT"
+                        : (status === "low_confidence"
+                          ? "LC"
+                          : "!")))))}
             </span>
           </div>
 
